@@ -1,0 +1,307 @@
+# demo — what `cubrid-importdb` does that a hand-scripted `loaddb` does not
+
+One command, four scenarios, every claim checked against the catalog:
+
+```sh
+export CUBRID=/path/to/a/cubrid/install          # an install, not a source tree
+bash demo/run_demo.sh path/to/cubrid-importdb    # or set IMPORTDB_BIN
+```
+
+The binary argument is optional — with none given the script uses
+`$IMPORTDB_BIN`, then `build/cubrid-importdb` next to the repo.
+
+Pass `-k` (or set `KEEP=1`) to leave the scratch directory, its databases and
+all the logs behind for inspection; the script prints the path it kept.
+
+It `mktemp -d`s a scratch directory outside the tree, points **both**
+`$CUBRID_DATABASES` and its working directory at it, creates seven databases of
+its own named `idbdemo_*` inside it, and removes the lot on exit (`trap`).
+Nothing outside that directory is read or written, and it only ever stops or
+drops a database this run created. Exit status is `0` if every assertion
+passed, `1` if one failed, `77` if it could not set up (so it can be registered
+as a skippable CTest case).
+
+Runtime is a couple of minutes on a quiet host, and almost all of it is CUBRID
+`createdb` plus seven server start/stops — the actual loading is seconds.
+
+## What is in here
+
+| file | what it is |
+|---|---|
+| `run_demo.sh` | the driver — all four scenarios, with PASS/FAIL assertions |
+| `schema.sql` | the schema being dumped and reloaded |
+| `gen_rows.sh` | emits the 3008 `INSERT` statements (generated, not checked in) |
+
+## The schema, and why it is shaped this way
+
+```
+          region            product          audit_log
+          (PK, UNIQUE)      (PK, UNIQUE)     (PK on an AUTO_INCREMENT column)
+             |                  |
+             | FK               |
+             v                  |
+          customer              | FK
+          (PK, UNIQUE,          |
+           plain index)         |
+             |                  |
+             | FK               |
+             v                  v
+                   orders
+                   (PK, two FKs, plain index)
+```
+
+- **Three dependency levels.** `L0 = [audit_log, product, region]`,
+  `L1 = [customer]`, `L2 = [orders]`. L0 has three members, so `--degree` has
+  something to fan out over.
+- **A PK, a UNIQUE that is not the PK, and a plain secondary index** — the
+  three constraint kinds the heap-only lifecycle treats differently (PK and
+  UNIQUE are stripped and bulk-rebuilt; plain indexes are deferred and built;
+  FKs are re-validated and only then defined).
+- **An `AUTO_INCREMENT` column** (`audit_log.entry_id`), so a serial has to
+  survive the round-trip. The demo compares `_db_serial` on both sides.
+- 3008 rows total. Deliberately small: this is a demo, not a benchmark.
+
+## Scenario 1 — the baseline contrast
+
+The same dump is reloaded twice: once the way an operator does it today, once
+with `cubrid-importdb`.
+
+The old way, printed by the script as it runs them:
+
+```
+cubrid loaddb -S -u dba -s idbdemo_src_schema                   idbdemo_old
+cubrid loaddb -S -u dba -d idbdemo_src_dba.audit_log_objects    idbdemo_old
+cubrid loaddb -S -u dba -d idbdemo_src_dba.customer_objects     idbdemo_old
+cubrid loaddb -S -u dba -d idbdemo_src_dba.orders_objects       idbdemo_old
+cubrid loaddb -S -u dba -d idbdemo_src_dba.product_objects      idbdemo_old
+cubrid loaddb -S -u dba -d idbdemo_src_dba.region_objects       idbdemo_old
+cubrid loaddb -S -u dba -i idbdemo_src_indexes                  idbdemo_old
+```
+
+Seven invocations, in an order the operator has to know: `-s` before `-d`,
+`-d` before `-i`, and one `-d` per object file because `loaddb` takes a single
+`--data-file`. A dump with forty classes is forty-two invocations, and getting
+the sequence wrong is how a reload half-succeeds.
+
+The new way:
+
+```
+cubrid-importdb -u dba idbdemo_new <dump-dir>
+```
+
+**What to look for in the output.** importdb narrates its own lifecycle, and
+those lines are the point of the scenario:
+
+```
+importdb: defined 'idbdemo_new'; the target database is now fully defined and empty.
+importdb: dependency graph for 'idbdemo_new' -- 5 node(s), 3 FK edge(s), 0 inheritance edge(s), 1 serial(s)
+importdb: schedule for 'idbdemo_new' -- data phase 3 level(s), 20 terminal task(s)
+importdb: stripped 11 constraint(s) from 'idbdemo_new'; the target now holds bare heaps ready for the data phase.
+importdb: loaded 3008 row(s) from 5 object file(s) into 'idbdemo_new'; ...
+importdb: rebuilt 8 constraint(s) and built 2 index(es) on 'idbdemo_new'; ...
+importdb: FK re-validation of 'idbdemo_new' passed -- 3 edge(s) validated clean, ...
+importdb: defined 3 FK(s) on 'idbdemo_new'; the catalog now matches the dump snapshot ...
+importdb: updated statistics on 5 class(es) in 'idbdemo_new'.
+```
+
+Read it as one sentence: *define the schema, read the catalog to learn the
+dependencies, snapshot and then **strip** every PK/UNIQUE/FK, load into bare
+heaps, bulk-rebuild the keys, re-validate the FKs against the data that
+actually landed, define the FKs, refresh statistics.* That is the heap-only
+lifecycle, and loading into a heap with no index to maintain is where the
+speed comes from.
+
+**What is asserted.** Not "trust me, it's the same" — the script snapshots
+both databases (row counts per table, every `db_index` row joined to its
+`db_index_key` columns, every `db_attribute` row including the
+`AUTO_INCREMENT` default, and `_db_serial`) and `diff`s them. A difference is
+printed as a diff and fails the run.
+
+**About the wall clock.** The script prints both. It is a single run of one
+3008-row dump on one host, with the `loaddb` path in standalone mode and
+importdb against a live server. It is there so the transcript is honest about
+what you just watched. It is **not** a benchmark and must not be quoted as
+one.
+
+## Scenario 2 — the plan (`--dry-run`)
+
+`--dry-run` connects, defines the schema, reads the catalog, builds the
+dependency graph, computes the schedule, prints it, and rolls the whole thing
+back.
+
+What to look for: the level sets and the terminal task list.
+
+```
+  data phase (parallel-eligible level sets):
+      L0: [audit_log, product, region]
+      L1: [customer]
+      L2: [orders]
+  terminal tasks (in a valid execution order):
+      #0  REBUILD_PK      audit_log (pk_audit_log)
+      ...
+      #9  FK_VALIDATE     customer -> region (fk_customer_region)   [after #4, #7]
+      #12 FK_DEFINE       customer -> region (fk_customer_region)   [after #4, #7, #9]
+```
+
+The `[after #N]` edges are the interesting part: every `FK_DEFINE` is
+predicated on its own `FK_VALIDATE` and on the rebuild of the parent key it
+points at. That ordering is what scenario 3 exercises.
+
+Asserted: exit 0, three levels printed, all three `FK_DEFINE` tasks carry
+prerequisites — and then that the target database has **zero** user classes
+afterwards and that no `importdb.manifest` was written into the dump
+directory. Nothing changed.
+
+## Scenario 3 — the dump with orphan rows (the one that matters)
+
+The script copies the dump and appends two rows to the `orders` object file:
+
+```
+900001 900001 1 1
+900002 900002 1 2
+```
+
+`order_id customer_id product_id qty`. Customers 900001 and 900002 do not
+exist. Product 1 does, so exactly one of the three FK edges is violated —
+which is also what lets the scenario show that the *other two* FKs still get
+defined.
+
+### (a) the old way accepts it, silently
+
+```
+Total 2002 object(s) inserted, 0 object(s) failed.
+```
+
+Exit status 0. Nothing on stderr. And then, from the catalog:
+
+| checked | result |
+|---|---|
+| rows in `orders` | 2002 |
+| `fk_orders_customer` present in `db_index` | 1 |
+| `orders` rows with no matching `customer` | 2 |
+
+Read those three lines together. The FOREIGN KEY is in the catalog **and** two
+rows violate it. `loaddb` turns FK checking off for the data phase — that is
+why loading `orders` before `customer` works at all — and it never turns it
+back on to re-check. The reload "succeeded" and the database is referentially
+broken.
+
+This is not a hypothetical about a hand-written script getting the order
+wrong. It is what `loaddb` does when handed a dump whose data does not satisfy
+its own schema, which is exactly the dump you get from a database that was
+*already* broken, or from an `unloaddb` of a subset of classes.
+
+### (b) importdb detects it, enumerates it, and withholds the FK
+
+```
+importdb: FK re-validation of 'idbdemo_fknew' found violations -- 1 edge(s) violated, 2 orphan row(s) total; ...
+importdb: defined 2 FK(s), withheld 1 on 'idbdemo_fknew' ...
+  withheld FKs (1) -- defined after the data is repaired:
+      orders -> customer (fk_orders_customer) :: FK re-validation found 2 orphan row(s)
+        re-add: ALTER CLASS [dba].[orders] ADD CONSTRAINT [fk_orders_customer] ...
+```
+
+Exit status 1. The data is still loaded (2002 rows — importdb does not throw
+away your import), the two clean FK edges are defined, and the violated one is
+**not** in the catalog. Next to the dump it leaves `importdb.exceptions`:
+
+```
+[edge] orders -> customer (fk_orders_customer)
+child_key_columns: order_id
+fk_columns: customer_id
+orphans: 2
+orphan: child[order_id=900001] fk[customer_id=900001]
+orphan: child[order_id=900002] fk[customer_id=900002]
+...
+readd: ALTER CLASS [dba].[orders] ADD CONSTRAINT [fk_orders_customer] ...
+```
+
+Every offending row, named by its own primary key, plus the DDL to put the FK
+back once they are fixed.
+
+`--continue` is what makes it enumerate *every* violated edge; the default is
+fail-fast on the first one.
+
+### (c) was withholding it the right call? ask the engine
+
+The scenario finishes by taking the `readd:` statement out of the exceptions
+file and running it against the importdb target:
+
+```
+ERROR: The constraint of the foreign key 'fk_orders_customer' is invalid, due to value '900001'.
+```
+
+The engine refuses to create that FOREIGN KEY over that data. So the state the
+`loaddb` path was left in — FK present, two rows violating it — is a state the
+engine itself would never have allowed through DDL. importdb declining to
+create it is not conservatism; it is the only answer consistent with what the
+engine enforces everywhere else.
+
+Then the script deletes the two rows the record names, re-runs the recorded
+DDL, and asserts the FK is now defined and the row count is back to 2000. The
+exceptions file is not a log message — it is a repair procedure.
+
+## Scenario 4 — inter-table parallelism (`--degree=4`)
+
+`--degree=N` fans the data phase out over the per-class object files through a
+bounded `loaddb -C` subprocess pool, which is why it needs a dump taken with
+`unloaddb --datafile-per-class` — with one object file for the whole database
+there is nothing to fan out over.
+
+```
+importdb: loaded 3008 row(s) from 5 object file(s) into 'idbdemo_par' at degree 4 (inter-table parallel; ...)
+```
+
+Asserted: exit 0, the data phase reports the degree it used, and the resulting
+state `diff`s clean against the serial run from scenario 1.
+
+Deliberately **not** asserted: that it is faster. Five object files and three
+thousand rows is far below the point where fan-out shows up as time. The claim
+under test is that the result does not change.
+
+## Things the demo does not show
+
+- **Resume.** A killed import re-runs from its manifest instead of starting
+  over (`importdb.manifest` in the dump directory, `--restart` to ignore it).
+  Demonstrating it means killing the process at a phase boundary, which is
+  timing-dependent and would make the demo flaky, so it is left out. The
+  manifest itself is visible in the dump directory after every non-dry run.
+- **Inheritance and partitioning edges.** The dependency graph carries them,
+  but this schema has neither; the graph line reports `0 inheritance edge(s)`.
+- **`--skip-object-classes`.** Needs a class with an object-valued (OID)
+  column, which CS-mode load cannot parse. Out of scope here.
+- **The HA refusal.** importdb refuses to import into an HA target unless
+  `--allow-ha` is given, because loading into bare heaps writes no row
+  replication records and the standby would silently end up empty. Showing it
+  needs an HA pair.
+
+## Notes for whoever maintains this
+
+- `csql -i file.sql` and `csql -c '<stmt>'` exit **0 even when a statement
+  fails**, so the script greps their output for `^ERROR` rather than trusting
+  the exit status.
+- `cubrid loaddb -S` and `cubrid unloaddb -S` need the server **down**;
+  `cubrid-importdb` needs it **up** (it is a CS-only utility). The script
+  brackets each step with `cubrid server start`/`stop` accordingly.
+- All verification goes through `csql -C` with the server up, not `csql -S`.
+  A standalone `csql` pays a full server bootstrap and a standalone vacuum pass
+  per invocation (about three seconds here), and the state snapshot alone makes
+  eight queries per database. Moving the reads to client-server took the whole
+  demo from about six minutes to about one and a half.
+- Each scenario gets its **own copy** of the dump directory, because importdb
+  writes `importdb.manifest` (and, on a violation, `importdb.exceptions`)
+  next to the dump — and a leftover manifest is exactly what triggers the
+  resume path on the next run.
+- An `AUTO_INCREMENT` column's serial does not appear in the `db_serial` view;
+  it is in `_db_serial`. That is what the state snapshot reads.
+- `$CUBRID_DATABASES` is **not** enough on its own to keep CUBRID out of the
+  source tree. It is where `databases.txt` lives and where a database is looked
+  up by name, but the volume files are created relative to the **working
+  directory**, and `csql`/`loaddb` also drop `csql.err`, `csql.access`, `lob/`
+  and their own `*_loaddb.log` there. The script therefore `cd`s into its
+  scratch directory as well. A 128 MB volume file committed by accident is a
+  push GitHub refuses outright, so do not remove either half of that.
+- The data phase runs `cub_admin loaddb -C` children at every degree, serial
+  being degree 1. The wording the demo greps for is
+  `loaded N row(s) from M object file(s) into '<db>'` at degree 1 and the same
+  line plus `at degree N (inter-table parallel` above it.

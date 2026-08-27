@@ -39,7 +39,13 @@ csql -u dba -S -c "CREATE TABLE t_narrow (a INTEGER, b INTEGER, c INTEGER, d INT
   done
   printf ';\nCOMMIT;\n'
 } > rows.sql
-csql -u dba -S --no-auto-commit -i rows.sql ccsrc >/dev/null 2>&1 || exit 77
+# csql -i exits 0 even when a statement inside the file failed (unlike csql -c,
+# which does propagate), so the exit status alone is not a guard here -- check the
+# output for an error line as well.
+if ! csql -u dba -S --no-auto-commit -i rows.sql ccsrc > rows.out 2>&1 \
+     || grep -qE '^ERROR' rows.out; then
+  echo "loading the fixture rows failed:"; sed -n '1,10p' rows.out; exit 77
+fi
 mkdir -p dump && ( cd dump && cubrid unloaddb -S -u dba --datafile-per-class ccsrc >/dev/null 2>&1 ) || exit 77
 OBJ="$(ls "$WORK"/dump/*_objects 2>/dev/null | head -1)"
 cubrid deletedb ccsrc >/dev/null 2>&1

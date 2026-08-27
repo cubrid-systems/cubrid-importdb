@@ -38,7 +38,13 @@ csql -u dba -S -c "CREATE TABLE parent (id INTEGER PRIMARY KEY, nm VARCHAR(20));
   for i in $(seq 1 400); do [ "$i" -gt 1 ] && printf ','; printf '(%d,%d,%d)' "$i" "$(( (i % 50) + 1 ))" "$i"; done
   printf ';\nCOMMIT;\n'
 } > rows.sql
-csql -u dba -S --no-auto-commit -i rows.sql smokesrc >/dev/null 2>&1 || exit 77
+# csql -i exits 0 even when a statement inside the file failed (unlike csql -c,
+# which does propagate), so the exit status alone is not a guard here -- check the
+# output for an error line as well.
+if ! csql -u dba -S --no-auto-commit -i rows.sql smokesrc > rows.out 2>&1 \
+     || grep -qE '^ERROR' rows.out; then
+  echo "loading the fixture rows failed:"; sed -n '1,10p' rows.out; exit 77
+fi
 ( cd dump && cubrid unloaddb -S -u dba --datafile-per-class smokesrc >/dev/null 2>&1 ) || exit 77
 cubrid deletedb smokesrc >/dev/null 2>&1
 
