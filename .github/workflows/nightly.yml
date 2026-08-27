@@ -131,22 +131,18 @@ jobs:
       - name: import something (the functional test)
         run: |
           set -euo pipefail
-          # CUBRID refuses to run as root
-          sudo useradd -m cub || true
-          sudo chown -R cub:cub "$CUBRID" build tools contract
-          sudo -u cub env CUBRID="$CUBRID" bash tools/smoke.sh "$PWD/build/cubrid-importdb"
+          bash tools/smoke.sh "$PWD/build/cubrid-importdb"
 
       - name: behaviour contract against that install
         run: |
           set -euo pipefail
           bash contract/check_surface.sh --install "$CUBRID"
-          sudo -u cub env CUBRID="$CUBRID" CONTRACT_CHECK_BIN="$PWD/build/contract_check" \
-            bash contract/run.sh
+          CONTRACT_CHECK_BIN="$PWD/build/contract_check" bash contract/run.sh
 
       - name: negative control -- a non-DBA must FAIL the contract
         run: |
-          if sudo -u cub env CUBRID="$CUBRID" CONTRACT_CHECK_BIN="$PWD/build/contract_check" \
-               CONTRACT_NEGATIVE=1 bash contract/run.sh; then
+          if CONTRACT_CHECK_BIN="$PWD/build/contract_check" CONTRACT_NEGATIVE=1 \
+               bash contract/run.sh; then
             echo "::error::the negative control PASSED -- the suite is not discriminating"
             exit 1
           fi

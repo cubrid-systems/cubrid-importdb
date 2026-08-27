@@ -1,0 +1,169 @@
+# tests/ — the functional suite
+
+`tools/smoke.sh` answers one question: does this build import at all? It is
+deliberately thin — one two-table dump, six catalog assertions — because it runs
+on every nightly and has to stay cheap.
+
+This directory answers the rest. Each case builds its own source database from a
+fixture, unloads it with the installed `unloaddb`, imports it with the binary
+under test, and asserts on the result — the catalog, the rows, the manifest, the
+exceptions artifact, and the tool's own printed output. Nothing is shared
+between cases except the helpers.
+
+## Running it
+
+```sh
+export CUBRID=/path/to/cubrid            # an install, not a source tree
+tests/run_tests.sh --bin=build/cubrid-importdb          # everything
+tests/run_tests.sh --bin=build/cubrid-importdb roundtrip fkcycle
+tests/run_tests.sh -k resume             # keep the scratch dir to poke at it
+tests/run_tests.sh -l                    # list the cases
+```
+
+`--bin` may be replaced by `IMPORTDB_BIN=/path/...` in the environment; with
+neither, the runner looks for `build/cubrid-importdb` and then for
+`cubrid-importdb` on `$PATH`.
+
+Through CTest, which is how CI runs it:
+
+```sh
+ctest --test-dir build -R functional --output-on-failure
+```
+
+Exit codes are the same contract `tools/smoke.sh` uses: **0** everything passed,
+**1** something failed, **77** the environment cannot run the suite at all — no
+`$CUBRID`, no binary, or a database cannot be created and served here. CTest
+reads 77 as SKIP, which is why an unconfigured host reports a skip rather than a
+red build.
+
+### Where it puts things
+
+Every database and every dump lives under a scratch directory created per run
+with `mktemp -d "${TMPDIR:-/tmp}/importdb-tests.XXXXXX"`, **never inside the
+repo** — a CUBRID volume file is 64 MB or more and GitHub refuses files over
+100 MB. Each case gets its own subdirectory and its own `CUBRID_DATABASES`, and
+`cd`s into it before touching `cubrid`. On exit a trap stops and deletes only
+the databases that case created, then removes the directory; `-k` keeps the
+directory and prints the path.
+
+Databases are named `it_<case>_<role>`. Nothing the suite did not create is ever
+stopped or deleted.
+
+## What each case covers
+
+| case | what it proves |
+|---|---|
+| `roundtrip` | The import reproduces the source. A fixture carrying a PK, a single-column UNIQUE, NOT NULL, DEFAULT, an FK, a plain index, a composite index with a DESC key, a multi-column UNIQUE index, a REVERSE index, a keyless table, an advanced serial and a trigger is compared against its import two ways: a tagged catalog fingerprint (`db_class`, `db_attribute`, `db_index`, `db_index_key`, `db_direct_super_class`, `db_partition`, `db_serial`, `db_trigger`) that must be byte-identical, and per-class row counts plus order-independent content checksums (rows sorted, then hashed — the physical load order differs). The counts are checked twice, once derived from the rows that were hashed and once asked of the server with `count(*)`, so a checksum that agrees for the wrong reason still fails. Also: the trigger is defined last, so it must not have fired on the bulk-loaded rows. |
+| `ordering` | A schema with three levels of FK edges below the root, one inheritance edge and a RANGE-partitioned table imports cleanly, and the level sets the tool *prints* are topologically valid — every parent strictly below its child, every superclass strictly below its subclass. The check parses the printed graph and the printed plan, which is what an operator reads. |
+| `fkcycle` | Two tables that reference each other import in one command. importdb strips the constraints before the data phase and defines them again afterwards, so both FKs are present at the end and no FK is withheld. |
+| `fkviolation` | A dump with orphan rows is detected, the offending rows are enumerated into `importdb.exceptions`, the run exits non-zero, and the violated FK is **withheld** — verified absent from `db_index`, with its re-add DDL in the manifest `[fkdefine]` section. The recorded DDL is then executed against the repaired data to prove it is the real repair. Default policy stops at the first violated edge; `--continue` reports both edges and all three orphans. |
+| `dryrun` | `--dry-run` changes nothing. Both halves are asserted: the plan really was produced (the graph is built from a real catalog read of the target, so the schema really was defined), and the catalog before and after is identical, with no manifest and no exceptions file written. Then a real import into the same database succeeds and round-trips — which it cannot if the rollback left anything behind. |
+| `degree` | `--degree=1`, `2` and `4` on a `--datafile-per-class` dump with five object files reach the same final state, and the same state as the source. Note that the data phase spawns `cub_admin loaddb -C` children through a bounded pool at *every* degree, so this is testing the pool's bound, not two different implementations. |
+| `resume` | `SIGKILL` mid-import, then the same command again. Two kill points, because they are different paths: **part-way into a phase** (wait for the manifest to record `stripped`, then kill while rows are loading — the resumed run must empty the tables and reload) and **at a phase boundary** (wait for `loaded`, which is written only after the data phase committed, then kill — the resumed run skips the data phase and re-enters the rebuild under its guard). Both must land on exactly the state an uninterrupted import produces, compared against a baseline import of the same dump. A third identical run must be a no-op. |
+| `refusals` | The things that must be refusals rather than surprises: no arguments, a missing positional, a missing dump directory, a directory with no dump in it, a dump with a schema file but no object roster, `--exceptions-table` (reserved), a non-DBA user, and a non-empty target. Each asserts the non-zero exit *and* the specific diagnostic, so a refusal that starts happening for a different reason still fails. |
+
+### What is not covered here, and why
+
+**`ha_mode=on` target.** The `refusals` case prints a `SKIP` with the reason
+rather than faking it. Asserting the HA guard needs a real HA master with a
+standby — a second host or a docker pair — which this harness cannot provision.
+Forcing `ha_mode` on a lone server would assert against a fixture that is not
+HA. The guard itself is in `src/import_db.cpp` (`HA_DISABLED ()` /
+`--allow-ha`), and the `m5 ha51b-docker` fixture referenced from
+`src/import_define.cpp` is where it was measured.
+
+**Two upstream properties the cases pin down rather than test.** Both are
+`unloaddb`/engine behaviour, not importdb's, and both were found by this suite:
+
+* `unloaddb` writes a serial's **current** value as its `START WITH`, so an
+  imported serial's `db_serial.start_val` equals the source's `current_val`.
+  `start_val` is therefore excluded from the catalog fingerprint, and
+  `roundtrip` asserts the actual behaviour (including the `START WITH` text in
+  the dump) instead of pretending it round-trips.
+* `cubrid loaddb -C` loads orphan rows into a table whose foreign key is already
+  defined, and exits 0 — the constraint ends up present but unsatisfied, with no
+  error anywhere. That is the gap `fkviolation` shows importdb closing: the
+  set-based anti-join before the FK is defined.
+
+## Layout
+
+```
+tests/
+├── run_tests.sh            entry point: selection, tally, exit code, preflight
+├── lib/
+│   ├── common.sh            helpers: databases, SQL, fingerprints, assertions
+│   └── fingerprint.sql      the catalog fingerprint query
+├── fixtures/
+│   ├── roundtrip.sql        every constraint / index / type family
+│   ├── ordering.sql         FK chain + inheritance + partitions
+│   ├── fkcycle.sql          two mutually-referencing tables
+│   ├── fkviolation.sql      parent + two children (orphans injected into the dump)
+│   ├── wide.sql             parent + four children, for degree and resume
+│   └── gen_rows.sh          row data, generated rather than committed
+└── cases/<name>.sh          one file per case
+```
+
+Fixtures hold schemas only. Row data is generated by `gen_rows.sh` so the repo
+does not carry megabytes of INSERT statements; the `wide` fixture takes a
+row-count argument, which is how `resume` makes the data phase long enough to be
+interrupted while `degree` stays cheap.
+
+## The assertion vocabulary
+
+Eight helpers, and nothing else, so the output reads the same everywhere:
+
+```
+assert_eq NAME GOT WANT           assert_rc NAME GOT WANT
+assert_nonzero_rc NAME GOT        assert_grep NAME FILE REGEX
+assert_no_grep NAME FILE REGEX    assert_same NAME EXPECTED ACTUAL
+assert_file NAME PATH             assert_no_file NAME PATH
+```
+
+Each prints exactly one line, `PASS  <case>  <name>` or `FAIL  <case>  <name>:
+<what went wrong>`. `assert_same` prints the first few lines of the diff under
+the failure. `note` prints an unnumbered informational line; `skip` prints a
+`SKIP` line, which the tally counts separately and which never fails the run.
+
+## What a failure looks like
+
+A failing assertion, and the tally at the end:
+
+```
+PASS  roundtrip    import exits clean (exit 0)
+FAIL  roundtrip    catalog fingerprint is identical: .../src.catalog and .../tgt.catalog differ
+        --- .../src.catalog
+        +++ .../tgt.catalog
+        @@ -20,7 +20,6 @@
+         #IDX  rt_emp  pk_rt_emp_emp_id  YES  NO  1  YES  NO  ...
+        -#IDX  rt_emp  ri_emp_salary     NO   YES 1  NO   NO  ...
+         #IDX  rt_emp  u_emp_id_nm       YES  NO  2  NO   NO  ...
+PASS  roundtrip    row count per class is identical
+
+---- tally ----
+assertions : 139 passed, 1 failed, 1 skipped
+cases      : 8 run, 1 with failures, 0 aborted
+functional: FAIL
+  FAIL  roundtrip    catalog fingerprint is identical: ...
+```
+
+A green run ends with the tally alone:
+
+```
+---- tally ----
+assertions : 139 passed, 0 failed, 1 skipped
+cases      : 8 run, 0 with failures, 0 aborted
+functional: PASS
+```
+
+A case that dies before reporting anything — a `die` on a fixture that will not
+build, a crash — is counted once as an aborted case, so it cannot pass by
+staying quiet:
+
+```
+FAIL  degree       case exited 1 without reporting a failure
+```
+
+Re-run just that case with `-k` to keep its scratch directory, then look at the
+logs it left there: `import.log` (or `d2.log`, `ff.log`, …) is the tool's full
+output, `*.catalog` and `*.data` are the fingerprints that were compared, and
+the dump directory still holds `importdb.manifest` and `importdb.exceptions`.

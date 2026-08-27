@@ -185,4 +185,11 @@ endif ()
 if (BUILD_UTILITY)
   add_test (NAME smoke COMMAND ${CMAKE_SOURCE_DIR}/tools/smoke.sh $<TARGET_FILE:cubrid-importdb>)
   set_tests_properties (smoke PROPERTIES SKIP_RETURN_CODE 77)
+  # The functional suite: round-trip fidelity, dependency ordering, FK cycles,
+  # FK violations, --dry-run, --degree, resume after SIGKILL, and the refusals.
+  # Same contract as smoke -- 0 pass, 1 fail, 77 could not set up -- and it
+  # creates every database in a scratch directory outside the source tree.
+  add_test (NAME functional
+            COMMAND ${CMAKE_SOURCE_DIR}/tests/run_tests.sh --bin $<TARGET_FILE:cubrid-importdb>)
+  set_tests_properties (functional PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 1800)
 endif ()

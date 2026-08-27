@@ -202,22 +202,20 @@ jobs:
       - name: import something (the acceptance the compile cannot give)
         run: |
           export CUBRID="$PWD/install.out"
-          useradd -m cub || true
-          chown -R cub:cub "$CUBRID" .importdb
-          su cub -c "CUBRID=$CUBRID bash .importdb/tools/smoke.sh $PWD/.importdb/build/cubrid-importdb"
+          bash .importdb/tools/smoke.sh "$PWD/.importdb/build/cubrid-importdb"
 
       - name: behaviour contract against the fresh install
         run: |
           export CUBRID="$PWD/install.out"
           bash .importdb/contract/check_surface.sh --install "$CUBRID"
-          su cub -c "CUBRID=$CUBRID CONTRACT_CHECK_BIN=$PWD/.importdb/build/contract_check \
-                     bash .importdb/contract/run.sh"
+          CONTRACT_CHECK_BIN="$PWD/.importdb/build/contract_check" \
+            bash .importdb/contract/run.sh
 
       - name: negative control -- a non-DBA must FAIL the contract
         run: |
           export CUBRID="$PWD/install.out"
-          if su cub -c "CUBRID=$CUBRID CONTRACT_CHECK_BIN=$PWD/.importdb/build/contract_check \
-                        CONTRACT_NEGATIVE=1 bash .importdb/contract/run.sh"; then
+          if CONTRACT_CHECK_BIN="$PWD/.importdb/build/contract_check" CONTRACT_NEGATIVE=1 \
+               bash .importdb/contract/run.sh; then
             echo '::error::the negative control PASSED -- the suite is not discriminating'
             exit 1
           fi

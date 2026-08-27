@@ -102,9 +102,7 @@ jobs:
                 -DCUBRID_BUILD_DIR="$PWD/engine/build" \
                 -DCMAKE_CXX_FLAGS="-Wall -Wextra"
           cmake --build utility/build -j"$(nproc)"
-          useradd -m cub || true
-          chown -R cub:cub "$CUBRID" utility
-          su cub -c "CUBRID=$CUBRID bash utility/tools/smoke.sh $PWD/utility/build/cubrid-importdb"
+          bash utility/tools/smoke.sh "$PWD/utility/build/cubrid-importdb"
 
   # ------------------------------------------- 3. behaviour against an install
   contract:
@@ -162,16 +160,17 @@ jobs:
 
       - name: runtime contract
         run: |
-          # CUBRID refuses to run as root
-          sudo useradd -m cub || true
-          sudo chown -R cub:cub "$CUBRID" build contract
-          sudo -u cub env CUBRID="$CUBRID" CONTRACT_CHECK_BIN="$PWD/build/contract_check" \
-            bash contract/run.sh
+          # No separate user: GitHub-hosted steps already run as `runner`, and
+          # CUBRID does not refuse root anyway (the only getuid() in the tree is
+          # csql's history-file path, csql_support.c:149). An earlier version of
+          # this job created a `cub` user and chowned the tree to it, which is
+          # what broke it -- the binary was built but not reachable as that user.
+          CONTRACT_CHECK_BIN="$PWD/build/contract_check" bash contract/run.sh
 
       - name: negative control -- a non-DBA must FAIL the contract
         run: |
-          if sudo -u cub env CUBRID="$CUBRID" CONTRACT_CHECK_BIN="$PWD/build/contract_check" \
-               CONTRACT_NEGATIVE=1 bash contract/run.sh; then
+          if CONTRACT_CHECK_BIN="$PWD/build/contract_check" CONTRACT_NEGATIVE=1 \
+               bash contract/run.sh; then
             echo "::error::the negative control PASSED -- the suite is not discriminating"
             exit 1
           fi
