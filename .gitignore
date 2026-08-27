@@ -1,1 +1,20 @@
 build/
+build-*/
+
+# CUBRID leaves its database artifacts in $CUBRID_DATABASES, which defaults to the
+# working directory. Scripts here are supposed to point it at a scratch dir, but
+# a stray run must not be committable: a database volume is 128 MB and GitHub
+# refuses it outright.
+databases.txt
+csql.err
+csql.access
+lob/
+*_lgat
+*_lgar_t
+*_lginf
+*_vinf
+*_keys
+*_dwb
+*_lgat__lock
+*_loaddb.log
+*_unloaddb.log

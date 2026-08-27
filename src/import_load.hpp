@@ -92,43 +92,45 @@ namespace cubimport
   enum class load_data_status
   {
     OK = 0,
-    ERR_LOAD			/* a loaddb session failed to load an object file */
+    ERR_LOAD			/* a loaddb child failed to load an object file */
   };
 
   /*
-   * Load the ImportSet's object data into the (stripped, bare-heap) target by
-   * reusing the loaddb data-load path through its public client stubs. Runs
-   * serially, one loaddb session per object file, honoring graph.skipped_classes
-   * (object-valued classes excluded under --skip-object-classes are not loaded).
-   * On success appends each file's row counts to summary and returns OK; the
-   * caller owns the transaction boundary. On a load failure emits the matching
-   * named diagnostic (naming the failing object file and the error), tears the
-   * loaddb session down, and returns ERR_LOAD; the caller aborts and closes the
+   * Load the ImportSet's object data into the (stripped, bare-heap) target.
+   *
+   * The CUBRID CS client is one-connection-per-process (a single global
+   * connection/request socket), so concurrency cannot come from threads sharing
+   * the caller's session. The data phase therefore spawns independent
+   * `cub_admin loaddb -C -d <object-file>` child PROCESSES -- each with its own
+   * connection and server-side worker pool -- up to `degree` at a time, bounded
+   * also by the object-file fan-out. Serial is degree 1: the same path, one child
+   * at a time. This is the model WU-05 validated (Q5: no cross-class BU_LOCK
+   * hazard for independent tables).
+   *
+   * There is deliberately no in-process variant. Driving loaddb's client stubs
+   * directly means calling entry points that take cubload C++ types by
+   * reference, which binds this utility to the engine's libstdc++ ABI; the
+   * published CUBRID binaries use the pre-C++11 std::string ABI, which a modern
+   * compiler does not produce. The subprocess path keeps this utility on the
+   * extern "C" db_* API, where that coupling does not exist.
+   *
+   * Because the children are separate transactions the caller MUST have
+   * committed the strip first (session_commit), so they load into durable bare
+   * heaps. Object-file order is irrelevant (bare heaps, value-only data), so all
+   * files are eligible to run concurrently; a PER_CLASS dump (one file per class)
+   * is what actually parallelizes, a SINGLE dump runs one child. user/password
+   * are forwarded to each child's -u/-p. Skipped classes are honoured: a
+   * PER_CLASS file for a skipped class is not spawned, a SINGLE file gets
+   * --ignore-class-file. Row counts are read back from the catalog after the
+   * children commit.
+   *
+   * On success appends each file's row counts to summary and returns OK. On any
+   * child failure emits IMPORTDB_MSG_LOAD_FAILED naming the object file (with the
+   * child's log tail) and returns ERR_LOAD; the caller aborts and closes the
    * session.
    */
-  load_data_status load_data (const import_set &iset, const dependency_graph &graph, load_summary &summary);
-
-  /*
-   * WU-40 inter-table parallel variant. The CUBRID CS client is one-connection-
-   * per-process (single global connection/request socket), so concurrency cannot
-   * come from threads sharing the caller's session; instead the data phase spawns
-   * independent `cub_admin loaddb -C -d <object-file>` child PROCESSES - each its own
-   * connection + server-side worker pool - up to `degree` at a time (bounded also
-   * by the object-file fan-out). This is the model WU-05 validated (Q5: no
-   * cross-class BU_LOCK hazard for independent tables). Because the children are
-   * separate transactions, the caller MUST have committed the strip first
-   * (session_commit) so they load into durable bare heaps. Object-file order is
-   * irrelevant (bare heaps, value-only data), so all files are eligible to run
-   * concurrently; a PER_CLASS dump (one file per class) is what actually
-   * parallelizes, a SINGLE dump (one file) runs one child. user/password are
-   * forwarded to each child's -u/-p; skipped classes are handled as in load_data
-   * (a PER_CLASS file for a skipped class is not spawned; a SINGLE file gets
-   * --ignore-class-file). Row counts are read back from the catalog after the
-   * children commit. Emits IMPORTDB_MSG_LOAD_FAILED naming the object file (with
-   * the child's log tail) on any child failure -> ERR_LOAD (the caller aborts).
-   */
-  load_data_status load_data_parallel (const import_set &iset, const dependency_graph &graph, load_summary &summary,
-				       int degree, const char *user, const char *password);
+  load_data_status load_data (const import_set &iset, const dependency_graph &graph, load_summary &summary,
+			      int degree, const char *user, const char *password);
 
 } // namespace cubimport
 

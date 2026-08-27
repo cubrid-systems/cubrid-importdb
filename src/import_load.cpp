@@ -20,32 +20,37 @@
  * import_load.cpp - Stage 4 (Load phase, step 2 of the constraint lifecycle)
  *
  * Pours the ImportSet's object data into the stripped (bare-heap) target by
- * REUSING the loaddb data-load path through its PUBLIC client stubs only -
- * loaddb source is untouched and no loaddb static is exposed. The flow mirrors
- * load_db.c's ldr_server_load () + load_object_file (), per object file:
- *   loaddb_init (load_args)  -> set up the server load session + worker pool,
- *   cubload::split ()        -> parse the file into batches, driving the
- *     class_handler (loaddb_install_class) and batch_handler (loaddb_load_batch),
- *   poll loaddb_fetch_status () until the session reports completed/failed,
- *   loaddb_destroy ()        -> tear the session down.
- * The loaddb-only concerns are dropped: no logddl, no -S / SA path, no
- * estimated-size, no compare-storage-order, and NO statistics update (statistics
- * are rebuilt in a later WU). The load_args we construct set only what a
- * value-only CS-mode object load into bare heaps needs: the object file path,
- * the batch/commit size (loaddb's default), disable-statistics, the effective
- * user (for the bare-name %class fallback), and the skipped-class ignore list.
+ * spawning `cub_admin loaddb -C` per object file through a bounded pool: at most
+ * `degree` children at once, and never more than the object-file fan-out.
+ * Serial is simply degree 1.
  *
- * Serial across tables (inter-table parallelism is M4/WU-40); each object file
- * gets its own loaddb session, which matches loaddb's one-file-per-session model
- * and keeps split ()'s per-file class-id numbering independent across files. The
- * load workers commit their own batches server-side, so the loaded rows are
- * durable independently of the caller's transaction; the caller owns only the
- * schema transaction (import_session.hpp) and commits it at the end.
+ * There used to be a second, in-process path for the serial case, driving the
+ * loaddb client stubs directly (loaddb_init / cubload::split /
+ * loaddb_install_class / loaddb_load_batch / loaddb_destroy). It was removed on
+ * purpose. Those entry points take cubload C++ types by reference, so calling
+ * them binds this utility to the engine's libstdc++ ABI -- and the published
+ * CUBRID binaries are built with the pre-C++11 std::string ABI, which a modern
+ * compiler does not produce. Keeping only the subprocess path leaves this
+ * utility on the extern "C" db_* API, where no such coupling exists, so it links
+ * against a nightly or release install exactly as that install was built. See
+ * the repo README, "Linking a released or nightly engine".
+ *
+ * What that costs: a process per object file instead of an in-process session.
+ * The server-side work is identical either way -- the child runs the same loaddb
+ * load path this code used to drive -- so the difference is process startup and
+ * one extra connection per file, not throughput.
+ *
+ * Two consequences of the children being independent connections, which the
+ * caller must honour: they cannot see an uncommitted strip, so the bare heaps
+ * must be committed before the load; and row counts are CATALOG-DERIVED
+ * afterwards rather than read out of a session's stats.
+ *
+ * Skipped (object-valued) classes are excluded: a PER_CLASS file whose class was
+ * excluded is not spawned at all, and a SINGLE file carrying skipped classes is
+ * loaded with loaddb's own --ignore-class-file.
  */
-
 #include "import_load.hpp"
 
-#include "network_interface_cl.h"	/* loaddb_* public stubs + cubload::load_args/batch/split */
 
 #include "db.h"
 #include "dbtype.h"			/* db_get_bigint / db_value_clear - post-load row counts */
@@ -99,7 +104,8 @@ namespace
     return out;
   }
 
-  /* Absolute form of dir (cubload::split requires an absolute object-file path).
+  /* Absolute form of dir (the loaddb child is given an absolute object-file path,
+   * since it does not inherit this process's working directory expectations).
    * Falls back to dir unchanged if it cannot be resolved. */
   std::string
   absolute_dir (const std::string &dir)
@@ -150,133 +156,6 @@ namespace
       }
     size_t dot = mid.find_last_of ('.');
     return to_lower (dot == std::string::npos ? mid : mid.substr (dot + 1));
-  }
-
-  /*
-   * Build the load_args for one object file. Only the fields a value-only
-   * CS-mode object load into bare heaps needs are set; everything else keeps the
-   * load_args () defaults. periodic_commit is loaddb's default batch/commit size
-   * (also the split () batch size); disable_statistics is set because statistics
-   * are rebuilt in a later WU (we never call loaddb_update_stats here);
-   * user_name is only consulted by the server for a bare (non-owner-qualified)
-   * %class name; ignore_classes carries the skipped (object-valued) classes.
-   */
-  void
-  build_load_args (cubload::load_args &args, const std::string &object_file_abs, const std::string &user,
-		   const std::vector<std::string> &ignore)
-  {
-    args.object_file = object_file_abs;
-    args.periodic_commit = cubload::load_args::PERIODIC_COMMIT_DEFAULT_VALUE;
-    args.verbose_commit = false;
-    args.disable_statistics = true;
-    args.user_name = user;
-    args.ignore_classes = ignore;
-  }
-
-  /*
-   * Load one object file in its own loaddb session (mirrors ldr_server_load () +
-   * load_object_file ()). On success sets rows/failed to the session totals and
-   * returns NO_ERROR; on failure sets err to the surfaced error text and returns
-   * a non-NO_ERROR code. The load workers commit their batches server-side.
-   */
-  int
-  load_one_file (const cubload::load_args &args_in, int64_t &rows, int64_t &failed, std::string &err)
-  {
-    cubload::load_args args = args_in;	/* loaddb_init takes a mutable reference */
-
-    int error = loaddb_init (args);
-    if (error != NO_ERROR)
-      {
-	err = db_error_string (3);
-	return error;
-      }
-
-    std::string load_err;
-
-    /* *INDENT-OFF* */
-    cubload::batch_handler b_handler = [&] (const cubload::batch &b) -> int
-    {
-      int rc = NO_ERROR;
-      bool use_temp_batch = false;
-      bool is_batch_accepted = false;
-      do
-	{
-	  cubload::load_status status;
-	  rc = loaddb_load_batch (b, use_temp_batch, is_batch_accepted, status);
-	  if (rc != NO_ERROR)
-	    {
-	      return rc;
-	    }
-	  use_temp_batch = true;	/* do not re-upload the batch while retrying */
-	  for (const cubload::stats &s : status.get_load_stats ())
-	    {
-	      if (load_err.empty () && !s.error_message.empty ())
-		{
-		  load_err = s.error_message;
-		}
-	    }
-	}
-      while (!is_batch_accepted);
-      return rc;
-    };
-
-    cubload::class_handler c_handler = [] (const cubload::batch &b, bool &is_ignored) -> int
-    {
-      std::string class_name;
-      return loaddb_install_class (b, is_ignored, class_name);
-    };
-    /* *INDENT-ON* */
-
-    error = cubload::split (args.periodic_commit, args.object_file, c_handler, b_handler);
-    if (error != NO_ERROR)
-      {
-	loaddb_interrupt ();
-      }
-
-    /* Drain: wait until the load session reports completion (all submitted
-     * batches processed) or failure, collecting the running totals. */
-    cubload::load_status status;
-    do
-      {
-	int fetch_error = loaddb_fetch_status (status);
-	if (fetch_error != NO_ERROR)
-	  {
-	    loaddb_interrupt ();
-	    if (error == NO_ERROR)
-	      {
-		error = fetch_error;
-	      }
-	    break;
-	  }
-	if (!status.get_load_stats ().empty ())
-	  {
-	    const cubload::stats &last = status.get_load_stats ().back ();
-	    rows = last.rows_committed;
-	    failed = last.rows_failed;
-	    if (load_err.empty () && !last.error_message.empty ())
-	      {
-		load_err = last.error_message;
-	      }
-	  }
-	std::this_thread::sleep_for (std::chrono::milliseconds (100));
-      }
-    while (! (status.is_load_completed () || status.is_load_failed ()));
-
-    bool session_failed = (error != NO_ERROR) || status.is_load_failed () || !load_err.empty ();
-
-    int destroy_error = loaddb_destroy ();
-
-    if (session_failed)
-      {
-	err = !load_err.empty () ? load_err : std::string (db_error_string (3));
-	return (error != NO_ERROR) ? error : ER_FAILED;
-      }
-    if (destroy_error != NO_ERROR)
-      {
-	err = db_error_string (3);
-	return destroy_error;
-      }
-    return NO_ERROR;
   }
 
   /* ---- WU-40 inter-table parallel load: bounded `cub_admin loaddb -C` pool ---- */
@@ -479,63 +358,9 @@ namespace
 namespace cubimport
 {
 
-  load_data_status
-  load_data (const import_set &iset, const dependency_graph &graph, load_summary &summary)
-  {
-    const std::string dump_dir_abs = absolute_dir (iset.dump_dir);
-
-    /* Skipped (object-valued) classes are excluded from graph.nodes and listed
-     * in graph.skipped_classes; they must not be loaded. Feed loaddb's native
-     * ignore mechanism (SINGLE: the one file carries every class), and, for a
-     * PER_CLASS file, skip the whole file whose class was excluded. */
-    std::vector<std::string> ignore_classes;
-    for (const std::string &c : graph.skipped_classes)
-      {
-	ignore_classes.push_back (to_lower (c));
-      }
-
-    /* The effective user is only consulted for a bare (non-owner-qualified)
-     * %class name; unloaddb 11.2+ dumps are owner-qualified. */
-    const char *user = db_get_user_name ();
-    const std::string user_name = (user != NULL) ? user : "";
-
-    for (const std::string &object_file : iset.object_files)
-      {
-	if (!ignore_classes.empty ())
-	  {
-	    const std::string cls = object_file_class (iset.prefix, object_file);
-	    if (!cls.empty ()
-		&& std::find (ignore_classes.begin (), ignore_classes.end (), cls) != ignore_classes.end ())
-	      {
-		continue;	/* per-class file for an excluded class */
-	      }
-	  }
-
-	cubload::load_args args;
-	build_load_args (args, path_join (dump_dir_abs, object_file), user_name, ignore_classes);
-
-	int64_t rows = 0;
-	int64_t failed = 0;
-	std::string err;
-	if (load_one_file (args, rows, failed, err) != NO_ERROR)
-	  {
-	    PRINT_AND_LOG_ERR_MSG (msg (IMPORTDB_MSG_LOAD_FAILED), object_file.c_str (), err.c_str ());
-	    return load_data_status::ERR_LOAD;
-	  }
-
-	summary.files.push_back ({ object_file, rows, failed });
-	summary.total_rows += rows;
-	summary.total_failed += failed;
-	summary.loaded_files++;
-      }
-
-    fprintf (stdout, msg (IMPORTDB_MSG_LOAD_COMPLETE), (long) summary.total_rows, summary.loaded_files,
-	     iset.database_name.c_str ());
-    return load_data_status::OK;
-  }
 
   load_data_status
-  load_data_parallel (const import_set &iset, const dependency_graph &graph, load_summary &summary, int degree,
+  load_data (const import_set &iset, const dependency_graph &graph, load_summary &summary, int degree,
 		      const char *user, const char *password)
   {
     const std::string dump_dir_abs = absolute_dir (iset.dump_dir);
@@ -745,8 +570,16 @@ namespace cubimport
       }
     rmdir (scratch.c_str ());
 
-    fprintf (stdout, msg (IMPORTDB_MSG_LOAD_PARALLEL_COMPLETE), (long) summary.total_rows, summary.loaded_files,
-	     iset.database_name.c_str (), deg);
+    if (deg > 1)
+      {
+	fprintf (stdout, msg (IMPORTDB_MSG_LOAD_PARALLEL_COMPLETE), (long) summary.total_rows, summary.loaded_files,
+		 iset.database_name.c_str (), deg);
+      }
+    else
+      {
+	fprintf (stdout, msg (IMPORTDB_MSG_LOAD_COMPLETE), (long) summary.total_rows, summary.loaded_files,
+		 iset.database_name.c_str ());
+      }
     return load_data_status::OK;
   }
 

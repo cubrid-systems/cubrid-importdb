@@ -117,9 +117,22 @@ the old ABI. The build **detects this from the library** with `nm` and matches i
 cannot read the symbols. Verified in both directions: pre-C++11 against a nightly
 install, `__cxx11` against a locally built engine.
 
-Worth naming plainly: this is the one place the source-distribution model still
-meets an ABI. It appears only because the utility links a **prebuilt** library; an
-engine built from the same source with the same compiler never sees it.
+**This no longer applies to `cubrid-importdb` itself.** The in-process serial load
+path — the only code that called across a `std::string` boundary — was removed:
+the data phase now spawns `cub_admin loaddb -C` at every degree, serial being
+degree 1. What is left is the `extern "C"` `db_*` API, where no such coupling
+exists. Verified: `-DCXX_ABI_MATCH=OFF` builds with the compiler's own ABI while
+linking the nightly's pre-C++11-ABI library, zero undefined references, and the
+smoke test passes. That option exists to keep the claim testable — if a future
+change reintroduces a call across a `std::string` boundary, that build fails.
+
+Detection is kept anyway, because `contract_check` links the same library and
+because a future engine could expose something new. It costs one `nm` call.
+
+What the removal cost: a process per object file instead of an in-process
+session. The server-side work is identical — the child runs the same loaddb load
+path the code used to drive — so the difference is process startup and one extra
+connection per file, not throughput.
 
 ## What can break, and what catches it
 

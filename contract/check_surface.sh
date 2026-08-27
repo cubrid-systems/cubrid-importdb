@@ -75,7 +75,7 @@ while read -r kind a b rest; do
       if [ "$MODE" = install ]; then h="$ROOT/include/$a"; else h="$(src_header "$a")"; fi
       if [ ! -f "$h" ]; then
         bad "declaring header not found: $a (for $b)"
-      elif grep -qE "\b$b[[:space:]]*\(" "$h"; then
+      elif grep -qE "\b${b}[[:space:]]*\(" "$h"; then
         ok "declared: $b in $a"
       else
         bad "NOT declared: $b in $a"
@@ -97,10 +97,10 @@ while read -r kind a b rest; do
         f="$ROOT/$a"
         if [ ! -f "$f" ]; then
           bad "constant file not found: $a"
-        elif grep -qE "\b$b[[:space:]]*=[[:space:]]*$rest\b" "$f"; then
+        elif grep -qE "\b${b}[[:space:]]*=[[:space:]]*${rest}\b" "$f"; then
           ok "constant unchanged: $b = $rest"
         else
-          got=$(grep -oE "\b$b[[:space:]]*=[[:space:]]*[0-9]+" "$f" | head -1)
+          got=$(grep -oE "\b${b}[[:space:]]*=[[:space:]]*[0-9]+" "$f" | head -1)
           bad "constant CHANGED: expected $b = $rest, found '${got:-nothing}' (this repo replicates it)"
         fi
       else skip; fi

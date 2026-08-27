@@ -21,6 +21,79 @@ list (APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 #                        but an INSTALL. It is the cheap probe that says whether
 #                        an install still behaves the way the utility assumes.
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+#  libstdc++ ABI
+#
+#  The published CUBRID binaries (releases and the nightly daily build) are built
+#  for maximum portability: an old glibc target, a statically linked libstdc++,
+#  and a compiler configured to the gcc4-compatible std::string ABI. A modern GCC
+#  defaults to the __cxx11 ABI, so every engine C++ interface that passes a
+#  std::string then fails to link -- concretely the cubload:: entry points that
+#  import_load.cpp's serial data path uses.
+#
+#  Do not key this off a compiler version or a distro: the build root can change
+#  under us and the guess would fail silently. Ask the LIBRARY. loaddb_install_class
+#  takes a std::string &, so its mangling states the ABI:
+#
+#     ...ERbRSs                        the pre-C++11 (gcc4) ABI
+#     ...ERbRNSt7__cxx1112basic_string the __cxx11 ABI
+#
+#  The plain db_* API is extern "C" and immune; only the C++ interfaces care.
+# ---------------------------------------------------------------------------
+function (cubrid_detect_cxx_abi out_var lib)
+  set (${out_var} OFF PARENT_SCOPE)
+  if (NOT UNIX OR NOT lib OR NOT EXISTS "${lib}")
+    return ()
+  endif ()
+  find_program (NM_EXECUTABLE nm)
+  if (NOT NM_EXECUTABLE)
+    message (WARNING "nm not found -- cannot read the engine's libstdc++ ABI;"
+                     " use -DFORCE_OLD_CXX_ABI=ON if the link fails on cubload:: symbols")
+    return ()
+  endif ()
+  execute_process (COMMAND ${NM_EXECUTABLE} -D --defined-only "${lib}"
+                   OUTPUT_VARIABLE _syms ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE)
+  if (_syms MATCHES "_Z20loaddb_install_classRKN7cubload5batchERbRSs")
+    set (${out_var} ON PARENT_SCOPE)
+  elseif (_syms MATCHES "_Z20loaddb_install_classRKN7cubload5batchERbRNSt7__cxx11")
+    set (${out_var} OFF PARENT_SCOPE)
+  else ()
+    message (WARNING
+      "could not read the libstdc++ ABI from ${lib}"
+      " -- if the link fails on cubload:: symbols, try -DFORCE_OLD_CXX_ABI=ON")
+  endif ()
+endfunction ()
+
+# Probe whichever engine library this configuration will actually link.
+find_library (CUBRID_CS_PROBE NAMES cubridcs
+  HINTS "${CUBRID_BUILD_DIR}/cs" "${CUBRID_BUILD_DIR}/lib" "$ENV{CUBRID}/lib"
+  NO_DEFAULT_PATH)
+cubrid_detect_cxx_abi (CUBRID_OLD_CXX_ABI "${CUBRID_CS_PROBE}")
+if (FORCE_OLD_CXX_ABI)
+  set (CUBRID_OLD_CXX_ABI ON)
+endif ()
+if (CUBRID_OLD_CXX_ABI)
+  message (STATUS "engine library uses the pre-C++11 std::string ABI -- matching it")
+else ()
+  message (STATUS "engine library uses the __cxx11 std::string ABI")
+endif ()
+
+# Applied per target rather than with add_compile_definitions(), which is
+# directory-scoped and would silently reach targets that never link the engine's
+# C++ interfaces.
+# CXX_ABI_MATCH=OFF builds with the compiler's own default ABI regardless of what
+# the library uses. It exists so the claim "this utility no longer touches the
+# engine's C++ interfaces" stays testable: with OFF, a build that links a
+# pre-C++11-ABI install must still succeed. If it ever fails again, something
+# reintroduced a call across a std::string boundary.
+option (CXX_ABI_MATCH "match the engine library's libstdc++ ABI" ON)
+
+function (cubrid_apply_cxx_abi target)
+  if (CUBRID_OLD_CXX_ABI AND CXX_ABI_MATCH)
+    target_compile_definitions (${target} PRIVATE _GLIBCXX_USE_CXX11_ABI=0)
+  endif ()
+endfunction ()
+
 option (BUILD_UTILITY  "build cubrid-importdb (needs CUBRID_SOURCE_DIR + CUBRID_BUILD_DIR)" ON)
 option (BUILD_CONTRACT "build the contract check (needs an installed CUBRID)"               ON)
 
@@ -79,48 +152,13 @@ if (BUILD_UTILITY)
   target_compile_options (cubrid-importdb PRIVATE
     -include importdb_utility_ext.h)
 
-  # ---- libstdc++ ABI: the released and nightly CUBRID binaries are built with
-  # the PRE-C++11 std::string ABI, so a modern GCC (which defaults to the
-  # __cxx11 one) cannot link the engine's C++ interfaces -- everything that
-  # passes a std::string, i.e. the cubload:: entry points import_load.cpp uses.
-  # Detect it from the library instead of guessing, and match.
-  find_library (CUBRID_CS_PROBE NAMES cubridcs
-    HINTS "${CUBRID_BUILD_DIR}/cs" "${CUBRID_BUILD_DIR}/lib" "$ENV{CUBRID}/lib"
-    NO_DEFAULT_PATH)
-  set (CUBRID_OLD_CXX_ABI OFF)
-  if (CUBRID_CS_PROBE AND UNIX)
-    find_program (NM_EXECUTABLE nm)
-    if (NM_EXECUTABLE)
-      execute_process (COMMAND ${NM_EXECUTABLE} -D --defined-only "${CUBRID_CS_PROBE}"
-                       OUTPUT_VARIABLE _syms ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE)
-      # loaddb_install_class takes a std::string &; its mangling says which ABI
-      if (_syms MATCHES "_Z20loaddb_install_classRKN7cubload5batchERbRSs")
-        set (CUBRID_OLD_CXX_ABI ON)
-      elseif (_syms MATCHES "_Z20loaddb_install_classRKN7cubload5batchERbRNSt7__cxx11")
-        set (CUBRID_OLD_CXX_ABI OFF)
-      else ()
-        message (WARNING
-          "could not read the libstdc++ ABI from ${CUBRID_CS_PROBE}"
-          " -- if the link fails on cubload:: symbols, try -DFORCE_OLD_CXX_ABI=ON")
-      endif ()
-    endif ()
-  endif ()
-  if (FORCE_OLD_CXX_ABI)
-    set (CUBRID_OLD_CXX_ABI ON)
-  endif ()
-  if (CUBRID_OLD_CXX_ABI)
-    message (STATUS "engine library uses the pre-C++11 std::string ABI -- matching it")
-    add_compile_definitions (_GLIBCXX_USE_CXX11_ABI=0)
-  else ()
-    message (STATUS "engine library uses the __cxx11 std::string ABI")
-  endif ()
-
   find_library (CUBRID_CS_FROM_BUILD NAMES cubridcs
     HINTS "${CUBRID_BUILD_DIR}/cs" "${CUBRID_BUILD_DIR}/lib" "$ENV{CUBRID}/lib"
     NO_DEFAULT_PATH)
   if (NOT CUBRID_CS_FROM_BUILD)
     message (FATAL_ERROR "libcubridcs not found under ${CUBRID_BUILD_DIR} or \$CUBRID/lib")
   endif ()
+  cubrid_apply_cxx_abi (cubrid-importdb)
   target_link_libraries (cubrid-importdb PRIVATE "${CUBRID_CS_FROM_BUILD}")
   message (STATUS "cubrid-importdb links ${CUBRID_CS_FROM_BUILD}")
   install (TARGETS cubrid-importdb RUNTIME DESTINATION bin)
@@ -130,6 +168,10 @@ endif ()
 if (BUILD_CONTRACT)
   find_package (CUBRID REQUIRED)
   add_executable (contract_check contract/contract_check.cpp)
+  # contract_check only calls the extern "C" db_* API, so the ABI does not reach
+  # across the boundary -- but it is built against the same library, so match it
+  # anyway rather than depending on that staying true.
+  cubrid_apply_cxx_abi (contract_check)
   target_link_libraries (contract_check PRIVATE CUBRID::cs)
   target_compile_options (contract_check PRIVATE -Wall -Wextra -Wno-unused-parameter)
   install (TARGETS contract_check RUNTIME DESTINATION bin)

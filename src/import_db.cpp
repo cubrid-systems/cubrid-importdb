@@ -706,8 +706,8 @@ importdb (UTIL_FUNCTION_ARG *arg)
 	  }
 
 	/* WU-31 Load phase (normal run only): pour each table's object data into
-	 * the now-bare heaps by reusing the loaddb data-load path (its public
-	 * client stubs), serially across tables. Skipped (object-valued) classes
+	 * the now-bare heaps by spawning `cub_admin loaddb -C` per object file,
+	 * `degree` at a time (degree 1 = serial). Skipped (object-valued) classes
 	 * are not loaded. On failure load_data () has already emitted the named
 	 * diagnostic (naming the failing object file); abort and fail the run. */
 	if (prior.reached < cubimport::import_phase::LOADED)
@@ -734,24 +734,19 @@ importdb (UTIL_FUNCTION_ARG *arg)
 						 IMPORTDB_MSG_RESUME_TRUNCATED), truncated);
 	      }
 
-	    cubimport::load_data_status lst;
-	    if (degree > 1)
+	    /* The data phase is a bounded pool of `cub_admin loaddb -C` children at
+	     * every degree - serial is degree 1 - because the in-process loaddb
+	     * stubs would bind this utility to the engine's libstdc++ ABI (see
+	     * import_load.cpp's header). The children are independent connections
+	     * and transactions, so they cannot see the caller's uncommitted strip:
+	     * commit the bare heaps durable first, unconditionally. */
+	    if (!cubimport::session_commit ())
 	      {
-		/* WU-40 inter-table parallel data phase (bounded loaddb -C pool).
-		 * The children are independent connections/transactions, so they
-		 * cannot see the caller's uncommitted strip - commit the bare
-		 * heaps durable first. */
-		if (!cubimport::session_commit ())
-		  {
-		    cubimport::session_close (false);
-		    goto error_exit;
-		  }
-		lst = cubimport::load_data_parallel (iset, graph, summary, degree, user_name, password);
+		cubimport::session_close (false);
+		goto error_exit;
 	      }
-	    else
-	      {
-		lst = cubimport::load_data (iset, graph, summary);
-	      }
+	    cubimport::load_data_status lst =
+	      cubimport::load_data (iset, graph, summary, degree, user_name, password);
 	    if (lst != cubimport::load_data_status::OK)
 	      {
 		cubimport::session_close (false);

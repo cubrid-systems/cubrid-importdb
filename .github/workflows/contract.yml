@@ -28,10 +28,12 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - name: shellcheck the contract scripts
+      - name: shellcheck every script in the repo
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
-          shellcheck -S warning contract/*.sh
+          # every .sh, not just contract/ -- tools/, demo/ and tests/ ship scripts too
+          find . -name '*.sh' -not -path './build/*' -not -path './.git/*' -print0 \
+            | xargs -0 -r shellcheck -S warning
       - name: every manifest line parses
         run: |
           bad=0
