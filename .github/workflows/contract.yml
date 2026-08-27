@@ -12,11 +12,6 @@ on:
     # drift watch: upstream can break us without touching this repo
     - cron: '17 3 * * *'
   workflow_dispatch:
-    inputs:
-      cubrid_image:
-        description: 'CUBRID container image to test against'
-        required: false
-        default: ''
 
 permissions:
   contents: read
@@ -94,14 +89,18 @@ jobs:
         run: |
           export CCACHE_DIR=~/.ccache
           export PATH=/usr/lib/ccache:$PATH
-          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo                 -DCMAKE_INSTALL_PREFIX="$PWD/install.out"
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+                -DCMAKE_INSTALL_PREFIX="$PWD/install.out"
           cmake --build build -j"$(nproc)"
           cmake --install build
 
       - name: build the utility and import something
         run: |
           export CUBRID="$PWD/engine/install.out"
-          cmake -S utility -B utility/build                 -DCUBRID_SOURCE_DIR="$PWD/engine"                 -DCUBRID_BUILD_DIR="$PWD/engine/build"                 -DCMAKE_CXX_FLAGS="-Wall -Wextra"
+          cmake -S utility -B utility/build \
+                -DCUBRID_SOURCE_DIR="$PWD/engine" \
+                -DCUBRID_BUILD_DIR="$PWD/engine/build" \
+                -DCMAKE_CXX_FLAGS="-Wall -Wextra"
           cmake --build utility/build -j"$(nproc)"
           useradd -m cub || true
           chown -R cub:cub "$CUBRID" utility
@@ -109,60 +108,74 @@ jobs:
 
   # ------------------------------------------- 3. behaviour against an install
   contract:
-    name: contract (${{ matrix.cubrid }})
+    name: contract (${{ matrix.engine }})
     runs-on: ubuntu-24.04
     needs: manifest
     strategy:
       fail-fast: false
       matrix:
-        # Which CUBRID installs to hold ourselves to. Add a row per supported
-        # release; the nightly `develop` lane lives in the engine repo instead
-        # (see upstream-guard.yml.for-cubrid-repo) because only that side has a
-        # build to piggyback on.
-        cubrid:
-          - '11.5'
-    container:
-      # NOTE: confirm the image/tag against the published CUBRID images before
-      # enabling. Any image is fine as long as it ships $CUBRID/{include,lib,bin}.
-      image: cubrid/cubrid:${{ matrix.cubrid }}
-      options: --user root
+        # Which engines this repo holds itself to. The install comes from
+        # ftp.cubrid.org, not a container registry: the FTP areas publish the
+        # source and the install as a pair from the same build, which is the
+        # property the whole design rests on, and there is no cubrid/cubrid:11.5
+        # image to pull anyway (the published tags stop at 11.4).
+        #
+        # 11.4 is deliberately NOT here. The contract check fails on it, for a
+        # real reason: `SELECT ... FROM _db_serial` is rejected there with
+        # `Unknown class "dba._db_serial"`, and reading that underlying class is
+        # how the Graph builder finds AUTO_INCREMENT serials (the db_serial view
+        # omits them). So 11.4 is out of range, and the check says so rather than
+        # the utility failing later and less clearly. Measured: 14/16, the two
+        # failures both _db_serial.
+        include:
+          - engine: nightly-11.5
+            fetch: --nightly 11.5
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - name: locate the install
-        id: cub
+      - name: cache the engine tarballs
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4
+        with:
+          path: engine/dl
+          key: engine-${{ matrix.engine }}-${{ github.run_id }}
+          restore-keys: engine-${{ matrix.engine }}-
+
+      - name: fetch the engine (source + install, same build)
+        run: bash tools/fetch_engine.sh ${{ matrix.fetch }} engine
+
+      - name: report what we got
         run: |
-          : "${CUBRID:?the image must export CUBRID}"
-          echo "root=$CUBRID" >> "$GITHUB_OUTPUT"
+          cat engine/engine.env >> "$GITHUB_STEP_SUMMARY"
+          cat engine/engine.env
+
+      - name: build the contract check against that install
+        run: |
+          export CUBRID="$PWD/engine/install"
           echo "CUBRID=$CUBRID" >> "$GITHUB_ENV"
-          ls "$CUBRID/include" | head -20
-
-      - name: static surface check (install mode)
-        run: bash contract/check_surface.sh --install "$CUBRID"
-
-      - name: configure + build
-        run: |
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+          cmake -S . -B build -DBUILD_UTILITY=OFF \
+                -DCMAKE_BUILD_TYPE=RelWithDebInfo \
                 -DCMAKE_CXX_FLAGS="-Wall -Wextra -Werror"
           cmake --build build -j"$(nproc)"
 
+      - name: static surface check
+        run: bash contract/check_surface.sh --install "$CUBRID"
+
       - name: runtime contract
         run: |
-          # the container runs as root; CUBRID refuses to run as root, so use a
-          # normal user for the server-side half
-          useradd -m cub || true
-          chown -R cub:cub "$CUBRID" build contract
-          su cub -c "CUBRID=$CUBRID CONTRACT_CHECK_BIN=$PWD/build/contract_check bash contract/run.sh"
+          # CUBRID refuses to run as root
+          sudo useradd -m cub || true
+          sudo chown -R cub:cub "$CUBRID" build contract
+          sudo -u cub env CUBRID="$CUBRID" CONTRACT_CHECK_BIN="$PWD/build/contract_check" \
+            bash contract/run.sh
 
       - name: negative control -- a non-DBA must FAIL the contract
         run: |
-          # A check suite that can only pass proves nothing. This asserts the
-          # suite still discriminates: as a non-DBA the catalog checks must fail.
-          su cub -c "CUBRID=$CUBRID CONTRACT_CHECK_BIN=$PWD/build/contract_check \
-                     CONTRACT_NEGATIVE=1 bash contract/run.sh" && {
-            echo 'negative control PASSED the contract -- the suite is not discriminating'
+          if sudo -u cub env CUBRID="$CUBRID" CONTRACT_CHECK_BIN="$PWD/build/contract_check" \
+               CONTRACT_NEGATIVE=1 bash contract/run.sh; then
+            echo "::error::the negative control PASSED -- the suite is not discriminating"
             exit 1
-          } || echo 'negative control failed the contract, as required'
+          fi
+          echo "negative control failed the contract, as required"
 
   # ------------------------------------------- 3. did upstream move under us?
   report:
