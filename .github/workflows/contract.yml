@@ -1,0 +1,116 @@
+# cubrid-importdb -- this repo's own lane.
+#
+# Three jobs, cheapest first. The point of the split is that the static job
+# needs no CUBRID at all, so a broken manifest fails in seconds.
+name: contract
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # drift watch: upstream can break us without touching this repo
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+    inputs:
+      cubrid_image:
+        description: 'CUBRID container image to test against'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------- 1. lint
+  manifest:
+    name: manifest is well formed
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: shellcheck the contract scripts
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          shellcheck -S warning contract/*.sh
+      - name: every manifest line parses
+        run: |
+          bad=0
+          while read -r kind rest; do
+            case "${kind:-}" in ''|'#') continue;; esac
+            case "$kind" in
+              header|install|decl|export|const|grep) ;;
+              *) echo "unknown kind '$kind' in surface_manifest.txt"; bad=1;;
+            esac
+            [ -n "$rest" ] || { echo "kind '$kind' with no argument"; bad=1; }
+          done < contract/surface_manifest.txt
+          exit $bad
+
+  # ------------------------------------------------- 2. build + full contract
+  contract:
+    name: contract (${{ matrix.cubrid }})
+    runs-on: ubuntu-24.04
+    needs: manifest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Which CUBRID installs to hold ourselves to. Add a row per supported
+        # release; the nightly `develop` lane lives in the engine repo instead
+        # (see upstream-guard.yml.for-cubrid-repo) because only that side has a
+        # build to piggyback on.
+        cubrid:
+          - '11.5'
+    container:
+      # NOTE: confirm the image/tag against the published CUBRID images before
+      # enabling. Any image is fine as long as it ships $CUBRID/{include,lib,bin}.
+      image: cubrid/cubrid:${{ matrix.cubrid }}
+      options: --user root
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: locate the install
+        id: cub
+        run: |
+          : "${CUBRID:?the image must export CUBRID}"
+          echo "root=$CUBRID" >> "$GITHUB_OUTPUT"
+          echo "CUBRID=$CUBRID" >> "$GITHUB_ENV"
+          ls "$CUBRID/include" | head -20
+
+      - name: static surface check (install mode)
+        run: bash contract/check_surface.sh --install "$CUBRID"
+
+      - name: configure + build
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+                -DCMAKE_CXX_FLAGS="-Wall -Wextra -Werror"
+          cmake --build build -j"$(nproc)"
+
+      - name: runtime contract
+        run: |
+          # the container runs as root; CUBRID refuses to run as root, so use a
+          # normal user for the server-side half
+          useradd -m cub || true
+          chown -R cub:cub "$CUBRID" build contract
+          su cub -c "CUBRID=$CUBRID CONTRACT_CHECK_BIN=$PWD/build/contract_check bash contract/run.sh"
+
+      - name: negative control -- a non-DBA must FAIL the contract
+        run: |
+          # A check suite that can only pass proves nothing. This asserts the
+          # suite still discriminates: as a non-DBA the catalog checks must fail.
+          su cub -c "CUBRID=$CUBRID CONTRACT_CHECK_BIN=$PWD/build/contract_check \
+                     CONTRACT_NEGATIVE=1 bash contract/run.sh" && {
+            echo 'negative control PASSED the contract -- the suite is not discriminating'
+            exit 1
+          } || echo 'negative control failed the contract, as required'
+
+  # ------------------------------------------- 3. did upstream move under us?
+  report:
+    name: summary
+    runs-on: ubuntu-24.04
+    needs: [manifest, contract]
+    if: always()
+    steps:
+      - name: verdict
+        run: |
+          echo "manifest: ${{ needs.manifest.result }}"
+          echo "contract: ${{ needs.contract.result }}"
+          [ "${{ needs.contract.result }}" = success ] || exit 1

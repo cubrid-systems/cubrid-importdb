@@ -1,0 +1,85 @@
+# cubrid-importdb -- the upstream surface this repo depends on.
+#
+# One line per requirement. `check_surface.sh` reads this file and verifies it
+# either against a CUBRID *install* (--install <dir>) or against a CUBRID
+# *source tree* (--source <dir>). The source mode is what the engine repo runs
+# on every PR: it costs seconds and catches the declaration-level breakage that
+# is most of what actually breaks.
+#
+# Format:  <kind> <arg> [arg...]
+#   header      <name>                     must be installed
+#   install     <name>                      the engine CMake must install it
+#   decl        <header> <symbol>           the header must declare the symbol
+#   export      <symbol>                    libcubridcs must export it unmangled
+#   const       <file> <name> <value>       a value replicated in this repo
+#   grep        <file> <regex> <why>        a contract expressed as source shape
+
+# ---- headers this repo is allowed to include
+header dbi.h
+header dbtype_def.h
+header dbtype_function.h
+header db_set_function.h
+header db_date.h
+header db_elo.h
+header dbtran_def.h
+header error_code.h
+
+# ---- the engine must keep installing them (source mode)
+install dbi_compat.h
+install dbtype_def.h
+install dbtype_function.h
+install db_set_function.h
+install db_date.h
+install db_elo.h
+install dbtran_def.h
+install error_code.h
+
+# ---- connect / session
+decl dbi.h db_login
+decl dbi.h db_restart
+decl dbi.h db_shutdown
+decl dbi.h db_set_client_type
+decl dbi.h db_error_string
+decl dbi.h db_error_code
+# ---- SQL execution and result iteration
+decl dbi.h db_execute
+decl dbi.h db_open_buffer
+decl dbi.h db_compile_statement
+decl dbi.h db_execute_statement
+decl dbi.h db_close_session
+decl dbi.h db_query_first_tuple
+decl dbi.h db_query_next_tuple
+decl dbi.h db_query_get_tuple_value
+decl dbi.h db_query_end
+# ---- transaction control
+decl dbi.h db_commit_transaction
+decl dbi.h db_abort_transaction
+# ---- the substitutes that replace non-installed calls
+decl dbi.h db_get_system_parameters
+decl dbi.h db_disable_trigger
+decl dbi.h db_find_class
+decl db_set_function.h db_col_size
+decl db_set_function.h db_col_get
+# ---- value extraction
+decl dbtype_function.h db_get_int
+decl dbtype_function.h db_get_bigint
+decl dbtype_function.h db_get_string
+decl dbtype_function.h db_value_type
+decl dbtype_function.h db_value_clear
+
+# ---- unmangled exports (install mode only; a mangled name is a contract break
+#      because the mangling encodes the parameter types)
+export db_login
+export db_restart
+export db_execute
+export db_open_buffer
+export db_get_system_parameters
+export db_col_get
+
+# ---- values this repo replicates because they are not installed
+const src/compat/db_client_type.hpp DB_CLIENT_TYPE_ADMIN_UTILITY 7
+
+# ---- source-shape contracts
+grep src/executables/util_admin.c util_get_utility_index.*argv cub_admin resolves the utility name from its own argv -- this is what lets the data phase exec `cub_admin loaddb ...` directly and keep the loader a DIRECT child, which is what PR_SET_PDEATHSIG needs
+grep src/executables/util_admin.c UTIL_OPTION_IMPORTDB the importdb utility is still registered in the admin utility map
+grep src/loaddb/load_server_loader.cpp HA_DISABLED the HA per-record fallback gate is still where the loaddb umbrella measured it (plan/loaddb I63) -- if this moves, the ha_mode guidance the utility prints is stale
