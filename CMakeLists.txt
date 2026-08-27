@@ -79,6 +79,42 @@ if (BUILD_UTILITY)
   target_compile_options (cubrid-importdb PRIVATE
     -include importdb_utility_ext.h)
 
+  # ---- libstdc++ ABI: the released and nightly CUBRID binaries are built with
+  # the PRE-C++11 std::string ABI, so a modern GCC (which defaults to the
+  # __cxx11 one) cannot link the engine's C++ interfaces -- everything that
+  # passes a std::string, i.e. the cubload:: entry points import_load.cpp uses.
+  # Detect it from the library instead of guessing, and match.
+  find_library (CUBRID_CS_PROBE NAMES cubridcs
+    HINTS "${CUBRID_BUILD_DIR}/cs" "${CUBRID_BUILD_DIR}/lib" "$ENV{CUBRID}/lib"
+    NO_DEFAULT_PATH)
+  set (CUBRID_OLD_CXX_ABI OFF)
+  if (CUBRID_CS_PROBE AND UNIX)
+    find_program (NM_EXECUTABLE nm)
+    if (NM_EXECUTABLE)
+      execute_process (COMMAND ${NM_EXECUTABLE} -D --defined-only "${CUBRID_CS_PROBE}"
+                       OUTPUT_VARIABLE _syms ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE)
+      # loaddb_install_class takes a std::string &; its mangling says which ABI
+      if (_syms MATCHES "_Z20loaddb_install_classRKN7cubload5batchERbRSs")
+        set (CUBRID_OLD_CXX_ABI ON)
+      elseif (_syms MATCHES "_Z20loaddb_install_classRKN7cubload5batchERbRNSt7__cxx11")
+        set (CUBRID_OLD_CXX_ABI OFF)
+      else ()
+        message (WARNING
+          "could not read the libstdc++ ABI from ${CUBRID_CS_PROBE}"
+          " -- if the link fails on cubload:: symbols, try -DFORCE_OLD_CXX_ABI=ON")
+      endif ()
+    endif ()
+  endif ()
+  if (FORCE_OLD_CXX_ABI)
+    set (CUBRID_OLD_CXX_ABI ON)
+  endif ()
+  if (CUBRID_OLD_CXX_ABI)
+    message (STATUS "engine library uses the pre-C++11 std::string ABI -- matching it")
+    add_compile_definitions (_GLIBCXX_USE_CXX11_ABI=0)
+  else ()
+    message (STATUS "engine library uses the __cxx11 std::string ABI")
+  endif ()
+
   find_library (CUBRID_CS_FROM_BUILD NAMES cubridcs
     HINTS "${CUBRID_BUILD_DIR}/cs" "${CUBRID_BUILD_DIR}/lib" "$ENV{CUBRID}/lib"
     NO_DEFAULT_PATH)

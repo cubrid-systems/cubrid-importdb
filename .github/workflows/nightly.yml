@@ -1,0 +1,206 @@
+# Functional test against the CUBRID nightly daily build.
+#
+# The nightly drop is what makes this cheap and exact. Each directory is named
+# <version>-<commit>, and the drop carries BOTH artifacts from that one build:
+#
+#   cubrid-<v>.tar.gz                    the source tree  -> the internal headers
+#                                        this utility compiles against
+#   CUBRID-<v>-Linux.x86_64.tar.gz       the install      -> libcubridcs to link,
+#                                        and a server to actually import into
+#
+# Taking both from the same drop removes the source/library skew entirely -- the
+# failure mode a binary distribution would have (a signature that moved between
+# the header you compiled against and the library you linked) cannot occur here.
+#
+# No engine build, and no access to the engine repo: the whole job needs nothing
+# but this repo and ftp.cubrid.org.
+
+name: nightly
+
+on:
+  schedule:
+    - cron: '23 4 * * *'
+  workflow_dispatch:
+    inputs:
+      engine_version:
+        description: 'nightly dir, e.g. 11.5.0.2494-4b6ae5c (blank = newest 11.5)'
+        required: false
+        default: ''
+  pull_request:
+    paths:
+      # a change to how we build or to the sources themselves must be re-tested
+      - 'src/**'
+      - 'include/**'
+      - 'cmake/**'
+      - 'CMakeLists.txt'
+      - 'tools/**'
+      - '.github/workflows/nightly.yml'
+
+permissions:
+  contents: read
+
+env:
+  FTP_BASE: https://ftp.cubrid.org/CUBRID_Engine/nightly/daily_build
+  ENGINE_SERIES: '11.5'
+
+jobs:
+  nightly:
+    name: build + import against the nightly
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: pick the engine build
+        id: pick
+        run: |
+          set -euo pipefail
+          want='${{ inputs.engine_version }}'
+          if [ -z "$want" ]; then
+            # newest directory in the series, by version sort
+            want=$(curl -sS --max-time 60 "$FTP_BASE/" \
+                   | grep -oE 'href="'"$ENGINE_SERIES"'\.[0-9.]+-[0-9a-f]+/"' \
+                   | sed 's/href="//;s|/"$||' | sort -u | sort -V | tail -1)
+          fi
+          [ -n "$want" ] || { echo "::error::could not resolve a nightly build"; exit 1; }
+          echo "version=$want"            >> "$GITHUB_OUTPUT"
+          echo "commit=${want##*-}"       >> "$GITHUB_OUTPUT"
+          echo "drop=$FTP_BASE/$want/drop" >> "$GITHUB_OUTPUT"
+          echo "engine build: $want  (commit ${want##*-})" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: cache the downloaded drop
+        id: dropcache
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4
+        with:
+          path: engine/dl
+          key: drop-${{ steps.pick.outputs.version }}
+
+      - name: download source + install from the same drop
+        if: steps.dropcache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p engine/dl
+          V='${{ steps.pick.outputs.version }}'
+          D='${{ steps.pick.outputs.drop }}'
+          curl -sS --fail --max-time 1800 -o engine/dl/src.tar.gz     "$D/cubrid-$V.tar.gz"
+          curl -sS --fail --max-time 1800 -o engine/dl/install.tar.gz "$D/CUBRID-$V-Linux.x86_64.tar.gz"
+          # the drop publishes checksums; use them rather than trusting the transfer
+          curl -sS --fail --max-time 120  -o engine/dl/hash.md5       "$D/hash.md5" || true
+          ls -l engine/dl
+
+      - name: verify the downloads against the drop's own checksums
+        run: |
+          set -uo pipefail
+          V='${{ steps.pick.outputs.version }}'
+          if [ ! -s engine/dl/hash.md5 ]; then
+            echo "no hash.md5 in the drop -- skipping verification"; exit 0
+          fi
+          fail=0
+          check () { # <file> <name-in-hash.md5>
+            # the drop writes "<md5> *<filename>" (md5sum's binary marker)
+            want=$(grep -E "[[:space:]][*]?$2$" engine/dl/hash.md5 | awk '{print $1}' | head -1)
+            [ -n "$want" ] || { echo "  $2: not listed in hash.md5"; return 0; }
+            got=$(md5sum "$1" | awk '{print $1}')
+            if [ "$want" = "$got" ]; then echo "  $2: md5 ok"; else echo "  $2: MD5 MISMATCH"; fail=1; fi
+          }
+          check engine/dl/src.tar.gz     "cubrid-$V.tar.gz"
+          check engine/dl/install.tar.gz "CUBRID-$V-Linux.x86_64.tar.gz"
+          exit $fail
+
+      - name: extract
+        run: |
+          set -euo pipefail
+          mkdir -p engine/src engine/install
+          tar xzf engine/dl/src.tar.gz     -C engine/src     --strip-components=1
+          tar xzf engine/dl/install.tar.gz -C engine/install --strip-components=1
+          test -f engine/src/src/executables/util_support.c
+          test -f engine/install/lib/libcubridcs.so
+          echo "CUBRID=$PWD/engine/install" >> "$GITHUB_ENV"
+
+      - name: build deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq cmake ninja-build ccache gcc g++ \
+            libncurses-dev bison flex openjdk-17-jdk-headless
+
+      # The utility's translation units need the engine's GENERATED headers and
+      # four 3rdparty header trees (rapidjson, re2, lz4 and the installed
+      # includes). Those come from a CONFIGURED build tree -- but not from a built
+      # engine, which is the saving: configure, then build only those targets.
+      - name: cache the configured build tree
+        id: cfgcache
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4
+        with:
+          path: engine/build
+          key: cfgtree-${{ steps.pick.outputs.version }}
+
+      - name: configure the engine and build only its 3rdparty headers
+        if: steps.cfgcache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          cmake -S engine/src -B engine/build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          # header producers only -- NOT the engine
+          cmake --build engine/build -j"$(nproc)" \
+                --target rapidjson re2 lz4 libexpat libjansson
+          for d in 3rdparty/include 3rdparty/Source/rapidjson/include \
+                   3rdparty/Source/re2 3rdparty/Source/lz4/lib; do
+            test -d "engine/build/$d" || { echo "::error::engine/build/$d missing after the 3rdparty build"; exit 1; }
+          done
+
+      - name: build cubrid-importdb against that source, linking that install
+        run: |
+          set -euo pipefail
+          # the libstdc++ ABI is detected from the library, not assumed -- the
+          # published binaries use the pre-C++11 std::string ABI and a modern GCC
+          # does not, which otherwise fails on every cubload:: symbol
+          cmake -S . -B build \
+                -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+                -DCUBRID_SOURCE_DIR="$PWD/engine/src" \
+                -DCUBRID_BUILD_DIR="$PWD/engine/build"
+          cmake --build build -j"$(nproc)" 2>&1 | tee /tmp/build.log
+          test -x build/cubrid-importdb
+
+      - name: import something (the functional test)
+        run: |
+          set -euo pipefail
+          # CUBRID refuses to run as root
+          sudo useradd -m cub || true
+          sudo chown -R cub:cub "$CUBRID" build tools contract
+          sudo -u cub env CUBRID="$CUBRID" bash tools/smoke.sh "$PWD/build/cubrid-importdb"
+
+      - name: behaviour contract against that install
+        run: |
+          set -euo pipefail
+          bash contract/check_surface.sh --install "$CUBRID"
+          sudo -u cub env CUBRID="$CUBRID" CONTRACT_CHECK_BIN="$PWD/build/contract_check" \
+            bash contract/run.sh
+
+      - name: negative control -- a non-DBA must FAIL the contract
+        run: |
+          if sudo -u cub env CUBRID="$CUBRID" CONTRACT_CHECK_BIN="$PWD/build/contract_check" \
+               CONTRACT_NEGATIVE=1 bash contract/run.sh; then
+            echo "::error::the negative control PASSED -- the suite is not discriminating"
+            exit 1
+          fi
+          echo "negative control failed the contract, as required"
+
+      - name: summary
+        if: always()
+        run: |
+          {
+            echo "### nightly ${{ steps.pick.outputs.version }}"
+            echo
+            echo "- engine commit: \`${{ steps.pick.outputs.commit }}\`"
+            echo "- source and library came from the same drop, so a link failure here"
+            echo "  is a real incompatibility, not skew."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: logs on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: nightly-${{ steps.pick.outputs.version }}-logs
+          path: |
+            /tmp/build.log
+            engine/install/log/**
+          retention-days: 7

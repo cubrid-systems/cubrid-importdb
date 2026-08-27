@@ -3,8 +3,10 @@
 `cubrid importdb` as an out-of-tree utility, distributed as **source** and
 recompiled against the engine it will run with.
 
-Status: **builds and imports.** `tools/smoke.sh` runs a real two-table import
-(PK, FK, plain index, 450 rows) and checks the catalog round-trip.
+Status: **builds and imports**, including against the official nightly daily
+build. `tools/smoke.sh` runs a real two-table import (PK, FK, plain index, 450
+rows) and checks the catalog round-trip; verified against
+`11.5.0.2494-4b6ae5c`.
 
 ## What is distributed, and what that costs
 
@@ -97,6 +99,27 @@ ways — statically (no build, no server) and at runtime against a live database
 See [`contract/README.md`](contract/README.md). CI runs both, and runs a
 **negative control** that must fail, so a green tick means the suite still
 discriminates.
+
+## Linking a released or nightly engine — the libstdc++ ABI
+
+The published CUBRID binaries are built with the **pre-C++11 `std::string` ABI**.
+A modern GCC defaults to the `__cxx11` one, so every engine C++ interface that
+passes a `std::string` fails to link — concretely the `cubload::` entry points
+`import_load.cpp`'s serial path uses:
+
+```
+undefined reference to `loaddb_install_class(cubload::batch const&, bool&, std::__cxx11::basic_string<...>&)'
+```
+
+The library exports `_Z20loaddb_install_classRKN7cubload5batchERbRSs` — `RSs`,
+the old ABI. The build **detects this from the library** with `nm` and matches it
+(`-D_GLIBCXX_USE_CXX11_ABI=0`); `-DFORCE_OLD_CXX_ABI=ON` overrides if detection
+cannot read the symbols. Verified in both directions: pre-C++11 against a nightly
+install, `__cxx11` against a locally built engine.
+
+Worth naming plainly: this is the one place the source-distribution model still
+meets an ABI. It appears only because the utility links a **prebuilt** library; an
+engine built from the same source with the same compiler never sees it.
 
 ## What can break, and what catches it
 
