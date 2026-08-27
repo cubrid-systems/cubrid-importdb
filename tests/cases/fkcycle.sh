@@ -30,7 +30,7 @@ run_import "$WORK/import.log" -u dba "$TGT" "$DUMP"
 assert_rc "import of a cyclic schema exits clean" "$IT_RC" 0
 assert_grep "report verdict is COMPLETE" "$WORK/import.log" "import COMPLETE"
 assert_grep "the cycle is reported, not refused" "$WORK/import.log" "cycle: \\[cy_a, cy_b, cy_a\\]"
-assert_grep "both FK edges validated clean" "$WORK/import.log" "2 edge\\(s\\) validated clean"
+assert_grep "both FK edges accepted by the engine" "$WORK/import.log" "2 edge\\(s\\) clean"
 assert_grep "both FK edges defined" "$WORK/import.log" "defined 2 FK\\(s\\)"
 
 assert_eq "both FKs present in the target catalog" \

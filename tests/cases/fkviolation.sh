@@ -54,7 +54,7 @@ run_import "$WORK/ff.log" -u dba "$TGT_FF" "$WORK/dump_ff"
 FF_RC=$IT_RC
 
 assert_nonzero_rc "orphan dump fails the run by default" "$FF_RC"
-assert_grep "the violated edge and its orphan count are named" "$WORK/ff.log" \
+assert_grep "the rejected edge and its orphan count are named" "$WORK/ff.log" \
   "found 2 orphan row\\(s\\) on 'fv_c1' -> 'fv_p' \\[fk_c1_p\\]"
 assert_grep "the default policy is announced as fail-fast" "$WORK/ff.log" "fail-fast"
 assert_grep "report verdict is PARTIAL" "$WORK/ff.log" "import PARTIAL"
@@ -104,8 +104,8 @@ run_import "$WORK/co.log" -u dba --continue "$TGT_CO" "$WORK/dump_co"
 CO_RC=$IT_RC
 
 assert_nonzero_rc "--continue still fails the run" "$CO_RC"
-assert_grep "--continue reports every violated edge" "$WORK/co.log" \
-  "2 edge\\(s\\) violated, 3 orphan row\\(s\\) total"
+assert_grep "--continue reports every rejected edge" "$WORK/co.log" \
+  "2 FOREIGN KEY\\(s\\) rejected by the engine, 3 orphan row\\(s\\) total"
 assert_eq "manifest records two violated edges" \
   "$(awk '/^\[validate\]/ { s = 1 } s && /^violated: / { print $2; exit }' "$WORK/dump_co/importdb.manifest")" 2
 assert_eq "exceptions artifact records two violated edges" \

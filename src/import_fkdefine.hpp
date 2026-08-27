@@ -158,7 +158,7 @@ namespace cubimport
    * "already exists", which this phase treats as a hard error.
    */
   fkdefine_status define_fks (const import_set &iset, const dependency_graph &graph, const rebuild_summary &rebuild,
-			      const validate_summary &validate, fkdefine_summary &summary,
+			      bool continue_on_error, validate_summary &validate, fkdefine_summary &summary,
 			      const catalog_state *present = nullptr);
 
 } // namespace cubimport

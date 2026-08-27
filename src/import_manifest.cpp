@@ -77,7 +77,10 @@ namespace
    * class+constraint pair), and two records that existed only in memory are now
    * written - the pending rebuild's re-add DDL and the failed plain indexes. A
    * reader refuses a manifest whose version is higher than this. */
-  const int MANIFEST_FORMAT_VERSION = 2;
+  /* v3 dropped the VALIDATED phase: FK re-validation merged into FK define, since
+ * the engine validates while building the FK. A v2 manifest names a phase this
+ * build no longer has, so a resume from one is refused rather than misread. */
+  const int MANIFEST_FORMAT_VERSION = 3;
 
   const char *const NONE_MARKER = "(none)";
   const char *const PLANNED_ORDER_PLACEHOLDER = "(placeholder: topological order assigned in WU-22)";
@@ -129,9 +132,13 @@ namespace
   }
 
   /* The phase-block rows, in pipeline order. Indexed by import_phase value. */
-  const char *const PHASE_NAMES[] = { "discovered", "defined", "stripped", "loaded", "rebuilt", "validated",
+  const char *const PHASE_NAMES[] = { "discovered", "defined", "stripped", "loaded", "rebuilt",
 				      "fk_defined", "stats_updated", "done"
 				    };
+  /* The table is indexed by the enum, so a phase added or removed without
+   * touching this array would silently shift every name. */
+  static_assert (sizeof (PHASE_NAMES) / sizeof (PHASE_NAMES[0])
+		 == (size_t) cubimport::import_phase::DONE + 1, "PHASE_NAMES must match import_phase");
 
   /* Render one FK cycle as "a -> b -> a" (the node list joined by " -> "). */
   std::string
@@ -238,7 +245,7 @@ namespace
   void
   render_plan_section (std::ostringstream &os, const cubimport::schedule &sched)
   {
-    int rebuild_pk = 0, rebuild_unique = 0, build_index = 0, fk_validate = 0, fk_define = 0, stats = 0,
+    int rebuild_pk = 0, rebuild_unique = 0, build_index = 0, fk_define = 0, stats = 0,
 	define_triggers = 0;
     for (const cubimport::terminal_task &t : sched.terminal_tasks)
       {
@@ -252,9 +259,6 @@ namespace
 	    break;
 	  case cubimport::terminal_task_kind::BUILD_INDEX:
 	    build_index++;
-	    break;
-	  case cubimport::terminal_task_kind::FK_VALIDATE:
-	    fk_validate++;
 	    break;
 	  case cubimport::terminal_task_kind::FK_DEFINE:
 	    fk_define++;
@@ -276,7 +280,6 @@ namespace
     os << "rebuild_pk: " << rebuild_pk << "\n";
     os << "rebuild_unique: " << rebuild_unique << "\n";
     os << "build_index: " << build_index << "\n";
-    os << "fk_validate: " << fk_validate << "\n";
     os << "fk_define: " << fk_define << "\n";
     os << "stats: " << stats << "\n";
     os << "define_triggers: " << define_triggers << "\n";

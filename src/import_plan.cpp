@@ -76,8 +76,6 @@ namespace
 	return "REBUILD_UNIQUE";
       case cubimport::terminal_task_kind::BUILD_INDEX:
 	return "BUILD_INDEX";
-      case cubimport::terminal_task_kind::FK_VALIDATE:
-	return "FK_VALIDATE";
       case cubimport::terminal_task_kind::FK_DEFINE:
 	return "FK_DEFINE";
       case cubimport::terminal_task_kind::STATS:
@@ -95,7 +93,6 @@ namespace
   {
     switch (t.kind)
       {
-      case cubimport::terminal_task_kind::FK_VALIDATE:
       case cubimport::terminal_task_kind::FK_DEFINE:
 	return t.cls + " -> " + t.parent + " (" + t.name + ")";
       case cubimport::terminal_task_kind::BUILD_INDEX:
@@ -193,27 +190,10 @@ namespace cubimport
 	v.insert (v.end (), it->second.begin (), it->second.end ());
       }
 
-    /* phase 2: FK_VALIDATE per edge, gated on the parent's key rebuilds. */
-    std::vector<std::size_t> validate_task (graph.fk_edges.size ());
-    for (std::size_t i = 0; i < graph.fk_edges.size (); i++)
-      {
-	const fk_edge &e = graph.fk_edges[i];
-	terminal_task t;
-	t.kind = terminal_task_kind::FK_VALIDATE;
-	t.cls = e.child;
-	t.parent = e.parent;
-	t.name = e.name;
-	std::map<std::string, std::vector<std::size_t>>::iterator pk = parent_keys_cache.find (e.parent);
-	if (pk != parent_keys_cache.end ())
-	  {
-	    t.prereqs = pk->second;
-	  }
-	validate_task[i] = tasks.size ();
-	tasks.push_back (t);
-      }
-
-    /* phase 3: FK_DEFINE per edge, after that edge's FK_VALIDATE (define-after-
-     * validate, Q10) and the same parent-key rebuilds. */
+    /* phase 2: FK_DEFINE per edge, after the same parent-key rebuilds. There is
+     * no separate FK_VALIDATE task any more: the engine validates the rows while
+     * it builds the FK (btree_load_check_fk), so this one task both defines and
+     * validates, and the anti-join runs only for an edge the engine rejects. */
     for (std::size_t i = 0; i < graph.fk_edges.size (); i++)
       {
 	const fk_edge &e = graph.fk_edges[i];
@@ -227,7 +207,6 @@ namespace cubimport
 	  {
 	    t.prereqs = pk->second;
 	  }
-	t.prereqs.push_back (validate_task[i]);
 	tasks.push_back (t);
       }
 

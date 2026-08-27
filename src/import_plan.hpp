@@ -57,8 +57,9 @@ namespace cubimport
     REBUILD_PK,			/* re-add the stripped/deferred primary key (per class w/ a PK) */
     REBUILD_UNIQUE,		/* re-add a standalone-unique constraint */
     BUILD_INDEX,		/* build the deferred plain CREATE INDEXes (<prefix>_indexes) */
-    FK_VALIDATE,		/* the per-edge anti-join */
-    FK_DEFINE,			/* define the FK after its validate (clean only, gated in M3) */
+    /* No FK_VALIDATE: the engine validates the rows while it builds the FK
+     * (btree_load_check_fk), so FK_DEFINE both defines and validates. */
+    FK_DEFINE,			/* define the FK; the engine rejects it if the data violates it */
     STATS,			/* update statistics per class */
     DEFINE_TRIGGERS		/* define the deferred triggers (strictly last) */
   };

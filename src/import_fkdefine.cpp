@@ -52,6 +52,7 @@
  */
 
 #include "import_fkdefine.hpp"
+#include "import_validate.hpp"	/* enumerate_fk_orphans / write_fk_exceptions */
 #include "import_resume.hpp"
 
 #include "db.h"
@@ -292,7 +293,8 @@ namespace cubimport
 
   fkdefine_status
   define_fks (const import_set &iset, const dependency_graph &graph, const rebuild_summary &rebuild,
-	      const validate_summary &validate, fkdefine_summary &summary, const catalog_state *present)
+	      bool continue_on_error, validate_summary &validate, fkdefine_summary &summary,
+	      const catalog_state *present)
   {
     summary = fkdefine_summary ();
 
@@ -314,28 +316,17 @@ namespace cubimport
 	withheld_by_rebuild[w.name] = w.reason;
       }
 
-    /* From FK re-validation: the edges proven clean (0 orphans) and the edges
-     * found violated (orphan count). A skipped edge is a Rebuild-phase withhold,
-     * already captured above. Under fail-fast the edges after the first violated
-     * one are absent from both sets (never re-validated) - and so are not proven
-     * clean, so they are withheld below. */
-    std::set<std::string> validated_clean;
+    /* No prior validation to read. The engine validates as it builds: this phase
+     * ATTEMPTS each edge's ADD CONSTRAINT and reads the verdict from the error
+     * code. `violated` fills in as that happens, and drives the withheld records
+     * and the exceptions artifact exactly as a separate phase's results used to.
+     *
+     * Under fail-fast the first rejected edge stops further attempts; the edges
+     * after it are withheld as un-attempted rather than silently defined. */
     std::map<std::string, int64_t> violated;
-    for (const fk_edge_result &r : validate.edges)
-      {
-	if (r.skipped)
-	  {
-	    continue;
-	  }
-	if (r.orphans > 0)
-	  {
-	    violated[r.name] = r.orphans;
-	  }
-	else
-	  {
-	    validated_clean.insert (r.name);
-	  }
-      }
+    bool stop_attempting = false;
+
+    validate = validate_summary ();
 
     /* The FK statement sources, mirroring the Rebuild phase's PK/UK sourcing.
      * SPLIT runs the isolated <prefix>_schema_fk file(s) from the apply order;
@@ -400,8 +391,7 @@ namespace cubimport
 	     * present (not Rebuild-withheld) that FK re-validation proved clean;
 	     * otherwise withhold and record the exact re-add DDL. */
 	    std::map<std::string, std::string>::iterator rw = withheld_by_rebuild.find (edge->name);
-	    std::map<std::string, int64_t>::iterator vv = violated.find (edge->name);
-	    if (rw == withheld_by_rebuild.end () && vv == violated.end () && validated_clean.count (edge->name))
+	    if (rw == withheld_by_rebuild.end () && !stop_attempting)
 	      {
 		/* WU-50 resume guard: an interrupted prior define may already
 		 * have defined this FK. Re-executing the ADD would fail on
@@ -414,16 +404,74 @@ namespace cubimport
 		  }
 
 		int error = exec_stmt (stmt + ";");
-		if (error != NO_ERROR)
+		if (error == NO_ERROR)
 		  {
-		    /* Unexpected: the data validated clean, so the FK build should
-		     * not fail. Treat as a hard error and abort the run. */
+		    summary.defined.push_back ({ edge->child, edge->parent, edge->name });
+		    fk_edge_result r;
+		    r.child = edge->child;
+		    r.parent = edge->parent;
+		    r.name = edge->name;
+		    r.orphans = 0;
+		    validate.edges.push_back (r);
+		    validate.validated_edges++;
+		  }
+		else if (db_error_code () == ER_FK_INVALID)
+		  {
+		    /* The engine built the FK's b-tree over the loaded rows and
+		     * btree_load_check_fk found a key with no parent -- so the data
+		     * is violated and no FK was created (no catalog residue, and the
+		     * transaction is unharmed; both measured). The engine names only
+		     * the FIRST offending value, so enumerate the rest here, for this
+		     * edge alone. */
+		    std::vector<fk_orphan> orphans;
+		    if (enumerate_fk_orphans (*edge, orphans) != NO_ERROR)
+		      {
+			/* the enumeration itself failed: already reported there */
+			hard_error = true;
+			break;
+		      }
+		    const int64_t n = (int64_t) orphans.size ();
+		    violated[edge->name] = n;
+		    validate.orphans.insert (validate.orphans.end (), orphans.begin (), orphans.end ());
+		    fk_edge_result r;
+		    r.child = edge->child;
+		    r.parent = edge->parent;
+		    r.name = edge->name;
+		    r.orphans = n;
+		    validate.edges.push_back (r);
+		    validate.validated_edges++;
+		    validate.violated_edges++;
+		    validate.total_orphans += n;
+
+		    /* four arguments, matching message 41 (the name appears twice in
+		     * the text but is one argument). */
+		    PRINT_AND_LOG_ERR_MSG (msg (IMPORTDB_MSG_VALIDATE_EDGE_VIOLATED), (int) n, edge->child.c_str (),
+					   edge->parent.c_str (), edge->name.c_str ());
+
+		    withheld_define w;
+		    w.child = edge->child;
+		    w.parent = edge->parent;
+		    w.name = edge->name;
+		    w.reason = "ADD FOREIGN KEY rejected by the engine: " + std::to_string (n) + " orphan row(s)";
+		    w.readd_ddl = stmt + ";";
+		    summary.withheld.push_back (w);
+
+		    /* Default policy is fail-fast: attempt no further edges. */
+		    if (!continue_on_error)
+		      {
+			stop_attempting = true;
+		      }
+		    continue;
+		  }
+		else
+		  {
+		    /* Any other failure is a real error -- the FK could not be built
+		     * for a reason that is not the data. Abort the run. */
 		    PRINT_AND_LOG_ERR_MSG (msg (IMPORTDB_MSG_FKDEFINE_FAILED), edge->name.c_str (), edge->child.c_str (),
 					   edge->parent.c_str (), db_error_string (3));
 		    hard_error = true;
 		    break;
 		  }
-		summary.defined.push_back ({ edge->child, edge->parent, edge->name });
 	      }
 	    else
 	      {
@@ -435,13 +483,9 @@ namespace cubimport
 		  {
 		    w.reason = "parent key withheld by rebuild (" + rw->second + ")";
 		  }
-		else if (vv != violated.end ())
-		  {
-		    w.reason = "FK re-validation found " + std::to_string (vv->second) + " orphan row(s)";
-		  }
 		else
 		  {
-		    w.reason = "not re-validated (fail-fast stopped at an earlier violated edge)";
+		    w.reason = "not attempted (fail-fast stopped at an earlier rejected edge)";
 		  }
 		w.readd_ddl = stmt + ";";
 		summary.withheld.push_back (w);
@@ -463,6 +507,21 @@ namespace cubimport
 	return fkdefine_status::ERR_FKDEFINE;
       }
 
+    /* Say what the engine decided about the data. These two lines used to come
+     * from the separate re-validation phase; the information is the same, it is
+     * just the FK build that produced it now. */
+    if (validate.violated_edges == 0)
+      {
+	fprintf (stdout, msg (IMPORTDB_MSG_VALIDATE_COMPLETE), graph.database_name.c_str (),
+		 validate.validated_edges, (int) rebuild.withheld.size ());
+      }
+    else
+      {
+	fprintf (stdout, msg (IMPORTDB_MSG_VALIDATE_VIOLATIONS), graph.database_name.c_str (),
+		 validate.violated_edges, (long) validate.total_orphans,
+		 path_join (iset.dump_dir, EXCEPTIONS_BASENAME).c_str ());
+      }
+
     /* Record every withheld FK's re-add DDL in the exceptions artifact so an
      * operator has the exact repair statement (appended after any WU-33 orphan
      * records, or creating the file when a Rebuild-phase withhold is the only
@@ -471,6 +530,22 @@ namespace cubimport
       {
 	summary.exceptions_file = EXCEPTIONS_BASENAME;
 	const std::string path = path_join (iset.dump_dir, EXCEPTIONS_BASENAME);
+
+	/* The orphan records first (this TRUNCATES the artifact), then the
+	 * withheld-FK section appended after them. Order matters: the withheld
+	 * writer replaces from its own marker to EOF, so writing it first and the
+	 * orphans second would throw the repair records away. */
+	if (validate.violated_edges > 0)
+	  {
+	    validate.exceptions_file = EXCEPTIONS_BASENAME;
+	    if (!write_fk_exceptions (path, iset, graph, validate, continue_on_error))
+	      {
+		PRINT_AND_LOG_ERR_MSG (msg (IMPORTDB_MSG_EXCEPTIONS_WRITE_FAILED), path.c_str (), strerror (errno));
+		summary = fkdefine_summary ();
+		return fkdefine_status::ERR_FKDEFINE;
+	      }
+	  }
+
 	if (!write_withheld_exceptions (path, summary))
 	  {
 	    PRINT_AND_LOG_ERR_MSG (msg (IMPORTDB_MSG_EXCEPTIONS_WRITE_FAILED), path.c_str (), strerror (errno));

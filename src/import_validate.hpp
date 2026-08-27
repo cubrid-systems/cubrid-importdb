@@ -130,38 +130,41 @@ namespace cubimport
   };
 
   /*
-   * Validate every FK edge of the graph by anti-join against the loaded target on
-   * the already-open session, honoring the fail-fast / --continue policy
-   * (continue_on_error) and skipping edges whose parent PK the Rebuild phase
-   * withheld (rebuild.withheld). Records the per-edge results + enumerated orphan
-   * rows in summary. On a violation writes the offending rows to the exceptions
-   * artifact in iset.dump_dir and returns VIOLATED; when every validatable edge
-   * is clean returns OK. On a hard error (anti-join failed, artifact write
-   * failed, or a malformed column mapping) emits the matching named diagnostic
-   * and returns ERR_VALIDATE. The caller owns the transaction boundary.
+   * Enumerate ONE FK edge's orphan child rows by anti-join against the loaded
+   * target on the already-open session, appending them to `out`.
+   *
+   * This used to be a phase of its own, run over every edge before any FK was
+   * defined. It is not, any more, and the reason is worth stating: the engine
+   * already validates. `ALTER TABLE ... ADD CONSTRAINT ... FOREIGN KEY` builds the
+   * FK's b-tree over the existing rows (sm_add_constraint -> btree_load_index) and
+   * `btree_load_check_fk` probes every key against the parent's PK index while it
+   * does, so an orphan makes the statement fail with ER_FK_INVALID and the FK is
+   * not created. Measured on 11.5.0.2494 and on develop d0b290459; a separate
+   * anti-join pass over clean data was pure cost -- ~0.56 s per edge against
+   * ~0.2 s for the ADD itself once the child's pages are warm, which they are
+   * right after the load.
+   *
+   * What the engine does NOT do is enumerate: it reports the FIRST offending value
+   * and stops. So the anti-join survives as the FAILURE path -- run for the one
+   * edge the engine just rejected, to list every offending row for the exceptions
+   * artifact. Clean dumps never pay for it.
+   *
+   * Returns NO_ERROR, or a negative error code after emitting the named
+   * diagnostic (a malformed column mapping, or the anti-join query failing).
+   * Manages its own authorization window; nesting inside the caller's is safe.
    */
-  validate_status validate_fks (const import_set &iset, const dependency_graph &graph, const rebuild_summary &rebuild,
-				bool continue_on_error, validate_summary &summary);
+  int enumerate_fk_orphans (const fk_edge &edge, std::vector<fk_orphan> &out);
 
   /*
-   * WU-41 parallel variant. The per-edge anti-joins are independent READS on the
-   * loaded tables (concurrent reads don't block), and on lineorder-dominated
-   * schemas re-validation is the largest terminal cost (WU-42 probe), so this is
-   * the terminal phase worth parallelizing. The CS client is one-connection-per-
-   * process, so it runs each non-withheld edge's count-only anti-join as an
-   * independent `csql -C` child, up to `degree` at a time. This is an OPTIMISTIC
-   * fast path for the clean case only: if every edge counts 0 it builds the same
-   * clean summary the serial path would; on ANY violation (count>0), csql/parse
-   * error, malformed mapping, or empty worklist it delegates to serial
-   * validate_fks () for the authoritative enumeration + exceptions artifact +
-   * fail-fast/--continue reporting. The caller MUST have committed the rebuild
-   * first (session_commit) so the independent csql connections see the rebuilt
-   * parent PK indexes (index-backed anti-joins); user/password are forwarded to
-   * each child's -u/-p. Result is identical to the serial path in every case.
+   * Write the exceptions artifact for the violations recorded in summary. Called
+   * by the FK define phase once it knows which edges the engine rejected. The
+   * file is truncated, so exactly one current copy of each record exists; the FK
+   * define phase then appends its own withheld-FK section after this.
+   *
+   * Returns false on a write failure (the caller reports and aborts).
    */
-  validate_status validate_fks_parallel (const import_set &iset, const dependency_graph &graph,
-					 const rebuild_summary &rebuild, bool continue_on_error, int degree,
-					 const char *user, const char *password, validate_summary &summary);
+  bool write_fk_exceptions (const std::string &path, const import_set &iset, const dependency_graph &graph,
+			    const validate_summary &summary, bool continue_on_error);
 
 } // namespace cubimport
 

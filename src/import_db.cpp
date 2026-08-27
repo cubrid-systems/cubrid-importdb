@@ -52,7 +52,7 @@
  * IS the validation): default fail-fast stops at the first edge with an orphan,
  * --continue enumerates every offending row, and any orphan writes the exceptions
  * artifact + [validate] manifest section and makes the run exit non-zero while the
- * loaded data + rebuilt constraints still commit (VALIDATED phase). WU-34 then
+ * loaded data + rebuilt constraints still commit. The FK define phase then
  * defines the FK on every validated-clean edge by re-executing the dump's own
  * ADD ... FOREIGN KEY statements (bulk-building the FK b-tree on the populated
  * tables), the terminal step of the §6 constraint lifecycle: an edge WU-32
@@ -349,7 +349,7 @@ importdb (UTIL_FUNCTION_ARG *arg)
 		  {
 		    why = "its [rebuild] record is missing";
 		  }
-		else if (found.reached >= cubimport::import_phase::VALIDATED && !found.has_validate)
+		else if (found.reached >= cubimport::import_phase::FK_DEFINED && !found.has_validate)
 		  {
 		    why = "its [validate] record is missing";
 		  }
@@ -599,7 +599,7 @@ importdb (UTIL_FUNCTION_ARG *arg)
 	cubimport::catalog_state present;
 	const bool guard_strip = resuming && prior.reached == cubimport::import_phase::DEFINED;
 	const bool guard_rebuild = resuming && prior.reached == cubimport::import_phase::LOADED;
-	const bool guard_fkdefine = resuming && prior.reached == cubimport::import_phase::VALIDATED;
+	const bool guard_fkdefine = resuming && prior.reached == cubimport::import_phase::REBUILT;
 	const bool guard_triggers = resuming && prior.reached == cubimport::import_phase::STATS_UPDATED;
 	const bool reload_data = resuming && prior.reached == cubimport::import_phase::STRIPPED;
 	if (resuming)
@@ -815,65 +815,13 @@ importdb (UTIL_FUNCTION_ARG *arg)
 		  : cubimport::rebuild_status::PARTIAL;
 	  }
 
-	/* WU-33 FK re-validation phase (normal run only): validate every FK edge
-	 * by a set-based anti-join BEFORE the FK is defined (FK define is WU-34) -
-	 * CUBRID's ADD FOREIGN KEY does not check existing rows, so this anti-join
-	 * IS the validation. Runs even after a PARTIAL rebuild (validating the
-	 * non-withheld edges; an edge whose parent PK was withheld is skipped).
-	 * Default fail-fast stops at the first edge with an orphan; --continue
-	 * enumerates every offending row. Any orphan writes the exceptions
-	 * artifact and makes the run exit non-zero while the loaded data + rebuilt
-	 * constraints still commit (the FK is simply never defined on the violated
-	 * data). Only a hard error (ERR_VALIDATE) aborts. Re-running it on a
-	 * resume needs no guard - the anti-joins are reads. */
-	if (prior.reached < cubimport::import_phase::VALIDATED)
-	  {
-	    if (degree > 1)
-	      {
-		/* WU-41: the FK re-validation anti-joins are the dominant terminal
-		 * cost (WU-42 probe) and are independent READS, so parallelize
-		 * them via a bounded csql -C pool. Commit the rebuild first so
-		 * those independent connections see the rebuilt parent PK indexes
-		 * (index-backed anti-joins, not table scans). The clean case runs
-		 * in parallel; any violation falls back to the serial in-process
-		 * path for the authoritative enumeration. */
-		if (!cubimport::session_commit ())
-		  {
-		    cubimport::session_close (false);
-		    goto error_exit;
-		  }
-		vst = cubimport::validate_fks_parallel (iset, graph, rb, continue_on_error, degree, user_name, password,
-							vs);
-	      }
-	    else
-	      {
-		vst = cubimport::validate_fks (iset, graph, rb, continue_on_error, vs);
-	      }
-	    if (vst == cubimport::validate_status::ERR_VALIDATE)
-	      {
-		cubimport::session_close (false);
-		goto error_exit;
-	      }
-
-	    /* Record the FK re-validation outcome (per-edge clean/violated/skipped
-	     * + orphan counts, and the exceptions artifact on a violation) and
-	     * advance the phase marker to VALIDATED. */
-	    if (!cubimport::session_commit ())
-	      {
-		cubimport::session_close (false);
-		goto error_exit;
-	      }
-	    if (!cubimport::write_manifest (iset, cubimport::import_phase::VALIDATED, &graph, &sched, &stripped,
-					    &summary, &rb, &vs))
-	      {
-		cubimport::session_close (false);
-		goto error_exit;
-	      }
-	  }
-	else
+	/* FK re-validation is no longer a phase. The engine validates while it
+	 * builds the FK, so the define phase below both defines and validates, and
+	 * enumerates offenders only for an edge the engine actually rejects. On a
+	 * resume the prior run's per-edge outcome is restored for reporting. */
+	if (prior.reached >= cubimport::import_phase::FK_DEFINED)
 	  {
 	    vs = prior.validate;
-	    vst = (vs.violated_edges > 0) ? cubimport::validate_status::VIOLATED : cubimport::validate_status::OK;
 	  }
 
 	/* WU-34 FK define phase (normal run only, the terminal step of the §6
@@ -889,7 +837,17 @@ importdb (UTIL_FUNCTION_ARG *arg)
 	 * or an exceptions-write failure - aborts (ERR_FKDEFINE). */
 	if (prior.reached < cubimport::import_phase::FK_DEFINED)
 	  {
-	    fst = cubimport::define_fks (iset, graph, rb, vs, fs, guard_fkdefine ? &present : NULL);
+	    /* The children of the load phase committed on their own connections and
+	     * the rebuild is committed too, so the FK build below sees durable data
+	     * and durable parent PK indexes. */
+	    if (!cubimport::session_commit ())
+	      {
+		cubimport::session_close (false);
+		goto error_exit;
+	      }
+	    fst = cubimport::define_fks (iset, graph, rb, continue_on_error, vs, fs,
+					 guard_fkdefine ? &present : NULL);
+	    vst = (vs.violated_edges > 0) ? cubimport::validate_status::VIOLATED : cubimport::validate_status::OK;
 	    if (fst == cubimport::fkdefine_status::ERR_FKDEFINE)
 	      {
 		cubimport::session_close (false);

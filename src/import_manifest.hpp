@@ -68,7 +68,9 @@ namespace cubimport
     STRIPPED,
     LOADED,
     REBUILT,
-    VALIDATED,
+    /* No VALIDATED: FK re-validation is not a phase any more. The engine
+     * validates while it builds the FK (btree_load_check_fk), so FK_DEFINED
+     * covers both -- see import_validate.cpp's header. Manifest format v3. */
     FK_DEFINED,
     STATS_UPDATED,
     DONE

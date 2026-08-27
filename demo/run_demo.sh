@@ -425,7 +425,7 @@ step "what it made of the dump"
 sed -n '1,5p' "$LOGS/importdb.new.log" | sed 's/^/     /'
 
 step "the phases it printed"
-grep -E '^importdb: (defined|dependency graph|schedule|stripped|loaded|rebuilt|FK re-validation|updated statistics)' \
+grep -E '^importdb: (defined|dependency graph|schedule|stripped|loaded|rebuilt|every FOREIGN KEY|updated statistics)' \
   "$LOGS/importdb.new.log" | sed 's/^/     /'
 
 step "same state either way?"
@@ -475,7 +475,10 @@ echo "     single-file dump plans exactly the same three levels."
 step "and it changed nothing"
 chk "levels printed" \
     "$(sed -n '/^  data phase/,/^  terminal tasks/p' "$LOGS/importdb.dry.log" | grep -cE '^ +L[0-9]+:')" "3"
-chk "FK_VALIDATE tasks planned before FK_DEFINE" \
+# FK_DEFINE is gated on the parent's key rebuild -- the FK b-tree cannot be built
+# until the parent PK it probes exists. There is no separate FK_VALIDATE task:
+# the engine validates the rows while building the FK.
+chk "each FK_DEFINE is gated on a prior rebuild" \
     "$(grep -E '^ +#[0-9]+ +FK_DEFINE' "$LOGS/importdb.dry.log" | grep -c 'after')" "3"
 chk "user classes left in '$DRY' after the dry run" \
     "$(scalar "$DRY" "SELECT count(*) FROM db_class WHERE is_system_class='NO'")" "0"
@@ -538,7 +541,7 @@ srv_start "$FKNEW" || give_up "cannot start the server for $FKNEW"
 echo "     + $(basename "$BIN") -u dba --continue $FKNEW <dump-dir>"
 "$BIN" -u dba --continue "$FKNEW" "$DUMP_S3" > "$LOGS/importdb.fknew.log" 2>&1
 fknew_rc=$?
-grep -E '^importdb: (FK re-validation|defined [0-9]+ FK)' "$LOGS/importdb.fknew.log" | sed 's/^/     /'
+grep -E '^importdb: (the engine rejected|defined [0-9]+ FK)' "$LOGS/importdb.fknew.log" | sed 's/^/     /'
 sed -n '/withheld FKs/,/enumerated in/p' "$LOGS/importdb.fknew.log" | sed 's/^/     /'
 chk "cubrid-importdb exit status on the same dump" "$fknew_rc" "1"
 chk "  ... rows in '$FKNEW'.orders (the data is still loaded)" \
@@ -627,7 +630,7 @@ t0="$(now_ms)"
 parp_rc=$?
 parp_ms=$(( $(now_ms) - t0 ))
 grep -E '^ +objects: ' "$LOGS/importdb.par.perclass.log" | sed 's/^/     /'
-grep -E '^importdb: (loaded|rebuilt|FK re-validation|defined [0-9]+ FK|updated statistics)' \
+grep -E '^importdb: (loaded|rebuilt|every FOREIGN KEY|defined [0-9]+ FK|updated statistics)' \
   "$LOGS/importdb.par.perclass.log" | sed 's/^/     /'
 chk "--degree=4 on the per-class dump: exit status" "$parp_rc" "0"
 chk "  ... object files available to fan out over" \
