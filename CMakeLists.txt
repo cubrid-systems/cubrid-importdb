@@ -6,23 +6,105 @@ set (CMAKE_CXX_STANDARD_REQUIRED ON)
 if (NOT CMAKE_BUILD_TYPE)
   set (CMAKE_BUILD_TYPE RelWithDebInfo)
 endif ()
-
 list (APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
-find_package (CUBRID REQUIRED)
 
-message (STATUS "CUBRID include : ${CUBRID_INCLUDE_DIR}")
-message (STATUS "CUBRID library : ${CUBRID_CS_LIBRARY}")
-message (STATUS "CUBRID bin     : ${CUBRID_BIN_DIR}")
+# ---------------------------------------------------------------------------
+#  Two build modes, because two questions are being asked.
+#
+#  utility (default)  -- build the real `cubrid-importdb`. Needs a CUBRID SOURCE
+#                        tree and a configured BUILD tree, because importdb uses
+#                        internal client headers (that is the whole reason this
+#                        is a source distribution and not a binary one) and the
+#                        build tree carries generated + 3rdparty headers.
+#
+#  contract           -- build only contract/contract_check, which needs nothing
+#                        but an INSTALL. It is the cheap probe that says whether
+#                        an install still behaves the way the utility assumes.
+# ---------------------------------------------------------------------------
+option (BUILD_UTILITY  "build cubrid-importdb (needs CUBRID_SOURCE_DIR + CUBRID_BUILD_DIR)" ON)
+option (BUILD_CONTRACT "build the contract check (needs an installed CUBRID)"               ON)
 
-# ---- the upstream contract check (what both CI lanes run)
-add_executable (contract_check contract/contract_check.cpp)
-target_link_libraries (contract_check PRIVATE CUBRID::cs)
-target_compile_options (contract_check PRIVATE -Wall -Wextra -Wno-unused-parameter)
+# ---------------------------------------------------------------- the utility
+if (BUILD_UTILITY)
+  if (NOT CUBRID_SOURCE_DIR OR NOT CUBRID_BUILD_DIR)
+    message (FATAL_ERROR
+      "BUILD_UTILITY needs -DCUBRID_SOURCE_DIR=<engine source> and "
+      "-DCUBRID_BUILD_DIR=<configured engine build>. Turn it off with "
+      "-DBUILD_UTILITY=OFF to build only the contract check.")
+  endif ()
+  # Has the split landed upstream yet? If the engine's utility.h still declares
+  # importdb's message ids and options, this repo must NOT declare them again.
+  set (IMPORTDB_ENGINE_HAS_DECLS OFF)
+  if (EXISTS "${CUBRID_SOURCE_DIR}/src/executables/utility.h")
+    file (READ "${CUBRID_SOURCE_DIR}/src/executables/utility.h" _uh)
+    if (_uh MATCHES "MSGCAT_UTIL_SET_IMPORTDB")
+      set (IMPORTDB_ENGINE_HAS_DECLS ON)
+      message (STATUS "engine tree still declares importdb in utility.h"
+                      " -- this repo's own declarations stand down (split not landed yet)")
+    endif ()
+  endif ()
+  if (NOT EXISTS "${CUBRID_SOURCE_DIR}/src/executables/util_support.c")
+    message (FATAL_ERROR "no util_support.c under ${CUBRID_SOURCE_DIR} -- is that a CUBRID source tree?")
+  endif ()
+
+  include (EngineFlags)
+
+  file (GLOB IMPORTDB_SOURCES "${CMAKE_SOURCE_DIR}/src/import_*.cpp")
+  add_executable (cubrid-importdb
+    ${IMPORTDB_SOURCES}
+    src/importdb_main.cpp
+    src/importdb_messages.cpp
+    # util_parse_argument lives in the engine's executables, not in libcubridcs,
+    # so the utility compiles the engine's own helper rather than copying it.
+    "${CUBRID_SOURCE_DIR}/src/executables/util_support.c")
+
+  target_include_directories (cubrid-importdb PRIVATE
+    "${CMAKE_SOURCE_DIR}/include"      # the utility's own declarations, first
+    "${CMAKE_SOURCE_DIR}/src"
+    ${CUBRID_ENGINE_INCLUDES})
+  if (IMPORTDB_ENGINE_HAS_DECLS)
+    target_compile_definitions (cubrid-importdb PRIVATE IMPORTDB_ENGINE_HAS_DECLS)
+  endif ()
+
+  # the engine builds its .c files as C++; do the same for the helper we borrow
+  set_source_files_properties ("${CUBRID_SOURCE_DIR}/src/executables/util_support.c"
+    PROPERTIES LANGUAGE CXX)
+
+  target_compile_definitions (cubrid-importdb PRIVATE
+    ${CUBRID_ENGINE_DEFINES}
+    # renames the declaration in message_catalog.h AND every call site together,
+    # which is why the importdb sources need no edits at all
+    msgcat_message=importdb_msgcat_message)
+  # the utility's own ids/options must be visible before the engine's utility.h
+  target_compile_options (cubrid-importdb PRIVATE
+    -include importdb_utility_ext.h)
+
+  find_library (CUBRID_CS_FROM_BUILD NAMES cubridcs
+    HINTS "${CUBRID_BUILD_DIR}/cs" "${CUBRID_BUILD_DIR}/lib" "$ENV{CUBRID}/lib"
+    NO_DEFAULT_PATH)
+  if (NOT CUBRID_CS_FROM_BUILD)
+    message (FATAL_ERROR "libcubridcs not found under ${CUBRID_BUILD_DIR} or \$CUBRID/lib")
+  endif ()
+  target_link_libraries (cubrid-importdb PRIVATE "${CUBRID_CS_FROM_BUILD}")
+  message (STATUS "cubrid-importdb links ${CUBRID_CS_FROM_BUILD}")
+  install (TARGETS cubrid-importdb RUNTIME DESTINATION bin)
+endif ()
+
+# -------------------------------------------------------- the contract check
+if (BUILD_CONTRACT)
+  find_package (CUBRID REQUIRED)
+  add_executable (contract_check contract/contract_check.cpp)
+  target_link_libraries (contract_check PRIVATE CUBRID::cs)
+  target_compile_options (contract_check PRIVATE -Wall -Wextra -Wno-unused-parameter)
+  install (TARGETS contract_check RUNTIME DESTINATION bin)
+endif ()
 
 enable_testing ()
-# The contract needs a live database, so the test wrapper creates one. It is
-# skipped (not failed) when no server can be started -- see contract/run.sh.
-add_test (NAME contract COMMAND ${CMAKE_SOURCE_DIR}/contract/run.sh)
-set_tests_properties (contract PROPERTIES SKIP_RETURN_CODE 77)
-
-install (TARGETS contract_check RUNTIME DESTINATION bin)
+if (BUILD_CONTRACT)
+  add_test (NAME contract COMMAND ${CMAKE_SOURCE_DIR}/contract/run.sh)
+  set_tests_properties (contract PROPERTIES SKIP_RETURN_CODE 77)
+endif ()
+if (BUILD_UTILITY)
+  add_test (NAME smoke COMMAND ${CMAKE_SOURCE_DIR}/tools/smoke.sh $<TARGET_FILE:cubrid-importdb>)
+  set_tests_properties (smoke PROPERTIES SKIP_RETURN_CODE 77)
+endif ()

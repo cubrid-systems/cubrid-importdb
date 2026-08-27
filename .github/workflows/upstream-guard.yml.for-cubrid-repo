@@ -3,47 +3,47 @@
 #  Copy to  cubrid/.github/workflows/importdb-contract.yml
 # ---------------------------------------------------------------------------
 #
-# Purpose: an engine change must not silently break the out-of-tree importdb
-# utility. The utility depends only on what CUBRID *installs* -- a small,
-# enumerated surface (cubrid-importdb `contract/surface_manifest.txt`). Two
-# lanes, because the two kinds of breakage cost very different amounts to find:
+# cubrid-importdb is distributed as SOURCE and recompiled against the engine, so
+# the contract is not an ABI -- it is "does it still compile, link and import".
+# That makes the guard a build, and builds are what CI is good at.
 #
-#   surface  (every PR, ~30 s, no build)  a header stops being installed, a
-#            declaration disappears, a replicated constant changes, or one of
-#            the source-shape contracts moves. This is most real breakage.
+# What can actually break the utility, and where it shows:
 #
-#   contract (nightly / on demand, needs a build) behaviour changes the static
-#            lane cannot see: authorization tightened on a catalog class, an SQL
-#            form withdrawn, the cub_admin argv contract changed, a symbol that
-#            stopped being exported unmangled.
+#   a header it includes is removed or renamed        -> compile
+#   a function it calls is removed or renamed         -> compile
+#   a signature changes with no compatible default    -> compile
+#   a type it uses changes shape                      -> compile
+#   utility.h's option/arg machinery changes          -> compile
+#   util_support.c moves                              -> build
+#   behaviour changes (authorization, SQL forms, the
+#   cub_admin argv contract)                          -> only the smoke test
+#
+# So: compile on every PR (cheap), link + import nightly (needs a full build).
 #
 # Auth: the utility repo is private, so checking it out needs a token. This
 # reuses the GitHub App pattern already in submodule-bump-receiver.yml -- install
 # the same app on both repos and add IMPORTDB_CONTRACT_APP_{ID,PRIVATE_KEY}.
-# (If the utility repo is made public, drop the token steps and check out plain.)
 
 name: importdb-contract
 
 on:
   pull_request:
-    branches: [develop, 'release/11.**', 'feature/**']
+    branches: [develop, 'release/11.**']
     paths:
-      # only the paths that can move the surface -- keeps this off unrelated PRs
+      # the utility reaches into these; an unrelated PR should not pay for this
+      - 'src/compat/**'
+      - 'src/base/**'
+      - 'src/object/**'
+      - 'src/loaddb/**'
+      - 'src/transaction/**'
+      - 'src/executables/utility.h'
+      - 'src/executables/util_support.c'
+      - 'src/executables/util_func.h'
       - 'cubrid/CMakeLists.txt'
       - 'cs/CMakeLists.txt'
-      - 'src/compat/**'
-      - 'src/base/error_code.h'
-      - 'src/executables/util_admin.c'
-      - 'src/executables/utility.h'
-      - 'src/loaddb/**'
   schedule:
     - cron: '41 2 * * *'
   workflow_dispatch:
-    inputs:
-      full:
-        description: 'also run the build-and-run contract lane'
-        type: boolean
-        default: true
 
 permissions:
   contents: read
@@ -53,13 +53,39 @@ env:
   UTILITY_REF: main
 
 jobs:
-  # ------------------------------------------------------------------ cheap
-  surface:
-    name: importdb surface (static)
+  # --------------------------------------------------------- compile-only, ~2 min
+  compile:
+    name: importdb compiles against this tree
     runs-on: ubuntu-24.04
     steps:
       - name: checkout engine
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          submodules: recursive
+
+      - name: build deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq cmake ninja-build ccache gcc g++ \
+            libncurses-dev bison flex openjdk-17-jdk-headless
+
+      # The utility's translation units need the engine's GENERATED and 3rdparty
+      # headers, which live in a configured build tree. They change rarely, so
+      # the tree is cached on the CMake inputs rather than rebuilt per PR.
+      - name: cache the configured engine build tree
+        id: cfgcache
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4
+        with:
+          path: build
+          key: importdb-cfgtree-${{ hashFiles('CMakeLists.txt', '*/CMakeLists.txt', 'cmake/**', '3rdparty/**/CMakeLists.txt') }}
+
+      - name: configure the engine (headers only; no engine compile)
+        if: steps.cfgcache.outputs.cache-hit != 'true'
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          # only the targets that produce generated + 3rdparty headers
+          cmake --build build -j"$(nproc)" --target 3rdparty || true
+          # a configure alone already writes the generated config headers
 
       - name: app token for the utility repo
         id: token
@@ -70,41 +96,54 @@ jobs:
           owner: ${{ github.repository_owner }}
           repositories: cubrid-importdb
 
-      - name: checkout the utility repo (contract only)
+      - name: checkout the utility repo
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: ${{ env.UTILITY_REPO }}
           ref: ${{ env.UTILITY_REF }}
           token: ${{ steps.token.outputs.token }}
-          path: .importdb-contract
-          sparse-checkout: contract
-          sparse-checkout-cone-mode: false
+          path: .importdb
 
-      - name: check the surface against this engine tree
-        run: bash .importdb-contract/contract/check_surface.sh --source "$PWD"
+      - name: compile the utility against this engine tree
+        run: |
+          export CCACHE_DIR=~/.ccache
+          export PATH=/usr/lib/ccache:$PATH
+          cmake -S .importdb -B .importdb/build \
+                -DBUILD_CONTRACT=OFF \
+                -DCUBRID_SOURCE_DIR="$PWD" \
+                -DCUBRID_BUILD_DIR="$PWD/build"
+          # compile only -- linking needs libcubridcs, which is the nightly lane
+          cmake --build .importdb/build -j"$(nproc)" --target cubrid-importdb 2>&1 | tee /tmp/build.log || true
+          if grep -q "error:" /tmp/build.log; then
+            echo "::error::the out-of-tree importdb no longer compiles against this tree"
+            grep -m20 "error:" /tmp/build.log
+            exit 1
+          fi
+          # a link failure here is expected (no library yet) and is not a verdict
+          echo "compile clean"
 
       - name: what to do if this failed
         if: failure()
         run: |
           cat <<'EOM'
-          The out-of-tree importdb utility depends on the surface listed in
-          cubrid-importdb contract/surface_manifest.txt, and this change moved it.
+          cubrid-importdb is built from source against this engine, so a change
+          here can stop it compiling. Three legitimate outcomes:
 
-          Three legitimate outcomes:
-            1. the move was unintended  -> keep installing / declaring it
-            2. the move is intended and the utility must adapt -> open a PR there
-               first, then land this with the manifest updated
-            3. the requirement was wrong -> drop the line from the manifest
+            1. unintended  -> keep the declaration / header / signature
+            2. intended, and the utility must adapt -> land a PR there first,
+               then this one
+            3. the utility was depending on something it should not -> say so on
+               its issue and let it change
 
-          None of them is "ignore the red". The failing line names exactly what
-          moved.
+          None of them is "ignore the red". The first compiler error above names
+          exactly what moved.
           EOM
 
-  # ------------------------------------------------------------------- heavy
-  contract:
-    name: importdb contract (build + run)
+  # ------------------------------------------- link + actually import, nightly
+  import:
+    name: importdb links and imports
     runs-on: ubuntu-24.04
-    if: github.event_name == 'schedule' || inputs.full
+    if: github.event_name != 'pull_request'
     timeout-minutes: 180
     steps:
       - name: checkout engine
@@ -122,17 +161,14 @@ jobs:
         uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4
         with:
           path: ~/.ccache
-          key: importdb-contract-ccache-${{ github.sha }}
-          restore-keys: importdb-contract-ccache-
+          key: importdb-engine-ccache-${{ github.sha }}
+          restore-keys: importdb-engine-ccache-
 
       - name: build + install the engine
         run: |
           export CCACHE_DIR=~/.ccache
           export PATH=/usr/lib/ccache:$PATH
-          # Only what the contract needs: the CS client library, the utility
-          # drivers, and the install rules that place the headers.
-          cmake -S . -B build -G Ninja \
-                -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
                 -DCMAKE_INSTALL_PREFIX="$PWD/install.out"
           cmake --build build -j"$(nproc)"
           cmake --install build
@@ -153,43 +189,46 @@ jobs:
           repository: ${{ env.UTILITY_REPO }}
           ref: ${{ env.UTILITY_REF }}
           token: ${{ steps.token.outputs.token }}
-          path: .importdb-contract
+          path: .importdb
 
-      - name: static surface check against the fresh install
+      - name: build the utility (compile + link)
         run: |
           export CUBRID="$PWD/install.out"
-          bash .importdb-contract/contract/check_surface.sh --install "$CUBRID"
+          cmake -S .importdb -B .importdb/build \
+                -DCUBRID_SOURCE_DIR="$PWD" \
+                -DCUBRID_BUILD_DIR="$PWD/build"
+          cmake --build .importdb/build -j"$(nproc)"
 
-      - name: build the utility's contract check against the fresh install
+      - name: import something (the acceptance the compile cannot give)
         run: |
           export CUBRID="$PWD/install.out"
-          cmake -S .importdb-contract -B .importdb-contract/build \
-                -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-                -DCMAKE_CXX_FLAGS="-Wall -Wextra -Werror"
-          cmake --build .importdb-contract/build -j"$(nproc)"
+          useradd -m cub || true
+          chown -R cub:cub "$CUBRID" .importdb
+          su cub -c "CUBRID=$CUBRID bash .importdb/tools/smoke.sh $PWD/.importdb/build/cubrid-importdb"
 
-      - name: run the contract
+      - name: behaviour contract against the fresh install
         run: |
           export CUBRID="$PWD/install.out"
-          export CONTRACT_CHECK_BIN="$PWD/.importdb-contract/build/contract_check"
-          bash .importdb-contract/contract/run.sh
+          bash .importdb/contract/check_surface.sh --install "$CUBRID"
+          su cub -c "CUBRID=$CUBRID CONTRACT_CHECK_BIN=$PWD/.importdb/build/contract_check \
+                     bash .importdb/contract/run.sh"
 
       - name: negative control -- a non-DBA must FAIL the contract
         run: |
           export CUBRID="$PWD/install.out"
-          export CONTRACT_CHECK_BIN="$PWD/.importdb-contract/build/contract_check"
-          if CONTRACT_NEGATIVE=1 bash .importdb-contract/contract/run.sh; then
-            echo 'the negative control PASSED -- the suite is not discriminating'
+          if su cub -c "CUBRID=$CUBRID CONTRACT_CHECK_BIN=$PWD/.importdb/build/contract_check \
+                        CONTRACT_NEGATIVE=1 bash .importdb/contract/run.sh"; then
+            echo '::error::the negative control PASSED -- the suite is not discriminating'
             exit 1
           fi
           echo 'negative control failed the contract, as required'
 
-      - name: keep the install for triage
+      - name: logs on failure
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: contract-failure-logs
+          name: importdb-contract-logs
           path: |
             install.out/log/**
-            .importdb-contract/build/CMakeFiles/*.log
+            .importdb/build/CMakeFiles/*.log
           retention-days: 7
