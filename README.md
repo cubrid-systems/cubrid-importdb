@@ -61,10 +61,39 @@ the engine tree):
 | `error_manager.h` | 7 | `error_code.h` (installed) + `db_error_code ()`; no `er_*` call sites exist |
 | `porting.h` | 3 | not needed on Linux |
 | `environment_variable.h` | 2 | `$CUBRID` path composition |
-| `system_parameter.h`, `connection_defs.h`, `config.h`, `boot.h` | 1 each | `db_get_system_parameters ()`; the last two have no call sites — dead includes |
-| `network_interface_cl.h` | 1 | no call sites — dead include |
-| `schema_manager.h`, `statistics.h` | 1 | SQL |
+| `system_parameter.h`, `connection_defs.h` | 1 each | `db_get_system_parameters ()` |
+| `config.h`, `boot.h` | 1 each | **dead includes** — verified by compiling the TU without them |
+| `schema_manager.h`, `statistics.h` | 1 | SQL (`statistics.h` is also a dead include — verified) |
 | `db_client_type.hpp` | 1 | literal 7, see the manifest `const` line |
+| **`network_interface_cl.h`** | 1 | **the one real gap — see below** |
 
-`boot.h`, `network_interface_cl.h`, `config.h` have **no matching call sites** in
-`src/importdb/` — they are leftover includes, so three of the sixteen are free.
+Verified by compiling each translation unit with the header removed, using the
+engine's own compile line: `config.h`, `boot.h` and `statistics.h` are dead
+includes. `network_interface_cl.h` is not.
+
+### The one real gap: the serial load path is in-process
+
+`import_load.cpp` has two data paths. `--degree > 1` forks
+`cub_admin loaddb -C` per object file — that one works out of tree (the contract
+check exercises it). The **serial** path instead drives loaddb *in process*
+through the CS network interface:
+
+```
+loaddb_init (args);                                  // cubload::load_args &
+loaddb_load_batch (b, use_temp, accepted, status);   // cubload::batch &, cubload::load_status &
+```
+
+Those symbols are exported, but mangled with C++ class parameters
+(`_Z11loaddb_initRN7cubload9load_argsE`) whose definitions live in
+`src/loaddb/load_common.hpp`, which is **not installed** — and `cubload::load_args`
+carries 14 `std::string` / `std::vector` members. Calling it from out of tree
+would mean replicating a C++ class layout, which breaks on any field addition.
+That is a different order of coupling from a function signature, and not worth
+taking.
+
+**So the out-of-tree port always uses the subprocess path**: serial becomes
+"degree 1", i.e. one `cub_admin loaddb -C` child per object file. The server-side
+work is identical either way (both end in the same `flush_records`), so the
+expected cost is a fixed per-file process spawn plus one extra connection, not a
+throughput change — **but that has not been measured**, and measuring it is the
+first task of the port.
