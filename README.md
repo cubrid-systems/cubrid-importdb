@@ -301,9 +301,11 @@ Two honest caveats:
   and an actual import fails in the graph phase.
 - Linux, a C++17 compiler, and CMake 3.16+ for importdb itself.
 - To *configure* the CUBRID engine (which the build below does, for its generated
-  headers) you also need Ninja or Make, a JDK, bison, flex and ncurses — the set
-  CI installs is `cmake ninja-build gcc g++ libncurses-dev bison flex
-  openjdk-17-jdk-headless`.
+  headers) you also need Ninja or Make, a JDK, bison, flex, ncurses and
+  `dtrace` — the set CI installs is `cmake ninja-build gcc g++ libncurses-dev
+  bison flex openjdk-17-jdk-headless systemtap-sdt-dev`. The last one is not
+  optional: the engine defaults `ENABLE_SYSTEMTAP` on and its CMake stops
+  without `dtrace`.
 - A CUBRID **source tree** and a configured **build tree** to compile against, plus
   an **installed** CUBRID to link and run against. See [Install](#install).
 
