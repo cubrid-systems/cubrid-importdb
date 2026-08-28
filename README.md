@@ -462,6 +462,22 @@ paired imports at two degrees — budget half an hour for it, or run
 | [`contract/`](contract/README.md) | What this repo depends on from CUBRID, enumerated and machine-checked: 41 static checks against an install, 16 runtime checks against a live database, plus a negative control that must fail |
 | [`docs/out-of-tree.md`](docs/out-of-tree.md) | How the build works against an engine it does not live in, and the libstdc++ ABI question |
 
+### Identity
+
+[`assets/`](assets/) holds three SVGs: `banner.svg` (the header at the top),
+`lifecycle.svg` (the figure in [The problem](#the-problem)), and `mark.svg` —
+the mark on its own, for a favicon, an avatar, or anywhere the banner is too wide.
+
+<img src="assets/mark.svg" alt="CUBRID ImportDB mark" width="52" height="52">
+
+The mark is not the banner's tangram shrunk. Seven colours do not survive 16px,
+so it reduces the square to the three right-isosceles pieces it actually
+decomposes into — areas 4 + 4 + 8 — keeping the same 45° geometry, the same
+CUBRID palette, and the same gesture: one piece not yet seated. All three files
+are theme-aware, with light as the base palette and a `prefers-color-scheme: dark`
+block overriding only what must change, so a renderer that ignores the media
+query still gets a correct picture rather than an invalid one.
+
 Two workflows run in this repo — [`contract.yml`](.github/workflows/contract.yml)
 checks the CUBRID surface this code depends on, and
 [`nightly.yml`](.github/workflows/nightly.yml) builds and imports against a
