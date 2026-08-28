@@ -56,18 +56,43 @@ itself the check.*
 
 ## Features
 
-| | |
-|---|---|
-| **One command for the whole dump** | Discovers the schema, object and index files, and the layout they were written in — default single-file or `--datafile-per-class`. No ordering for you to get right. |
-| **Dependency-aware planning** | Reads the catalog after defining the schema and builds a graph from FK, inheritance, partitioning and serials, then loads in level order. FK definition is deferred for every edge, so mutually-referencing tables need no special handling — a cycle loads in one pass like anything else. |
-| **Heap-only load** | Strips PK/UNIQUE/FK, loads into bare heaps, then bulk-builds the constraints on the populated tables. No per-row index maintenance during the data phase. |
-| **Referential integrity is enforced, not assumed** | Every foreign key is defined against the loaded data. If the data violates one, the engine rejects it, and importdb enumerates *every* offending row (the engine names only the first) and withholds that FK rather than defining a broken one. |
-| **A repair record you can act on** | `importdb.exceptions` lists each orphan by its primary key — or by position, for a child table that has none — and carries the exact DDL to add the withheld FK once the data is fixed. |
-| **A live display** | On a terminal, a progress block shows the current phase, its position in the pipeline, and — during the data phase — how far each loader has read into its object file. Off automatically when stdout is not a terminal. |
-| **Inter-table parallelism** | `--degree=N` runs N loaders concurrently, one per object file. It needs a `--datafile-per-class` dump to have anything to spread over. |
-| **Resume** | A killed import re-run with the same command continues from its manifest instead of starting over. |
-| **Honest about HA** | Refuses an `ha_mode=on` target by default, because the bare-heap load does not replicate to the standby. `--allow-ha` overrides and says so twice — once before the load and once in the verdict. |
-| **`--dry-run`** | Prints the plan and the terminal task order; changes nothing. |
+**One command for the whole dump.** Discovers the schema, object and index files,
+and the layout they were written in — default single-file or `--datafile-per-class`.
+No ordering for you to get right.
+
+**Dependency-aware planning.** Reads the catalog after defining the schema and
+builds a graph from FK, inheritance, partitioning and serials, then loads in level
+order. FK definition is deferred for every edge, so mutually-referencing tables
+need no special handling — a cycle loads in one pass like anything else.
+
+**Heap-only load.** Strips PK/UNIQUE/FK, loads into bare heaps, then bulk-builds
+the constraints on the populated tables. No per-row index maintenance during the
+data phase.
+
+**Referential integrity enforced, not assumed.** Every foreign key is defined
+against the loaded data. If the data violates one, importdb enumerates *every*
+offending row — the engine names only the first — and withholds that FK rather
+than defining a broken one.
+
+**A repair record you can act on.** `importdb.exceptions` lists each orphan by its
+primary key (or by position, for a child table without one) and carries the exact
+DDL to add the withheld FK once the data is fixed.
+
+**A live display.** On a terminal, a progress block shows the current phase, its
+position in the pipeline, and how far each loader has read into its object file.
+Off automatically when stdout is not a terminal.
+
+**Inter-table parallelism.** `--degree=N` runs N loaders concurrently, one per
+object file; it needs a `--datafile-per-class` dump to have anything to spread over.
+
+**Resume.** A killed import re-run with the same command continues from its
+manifest instead of starting over.
+
+**Honest about HA.** Refuses an `ha_mode=on` target by default, because the
+bare-heap load does not replicate to the standby. `--allow-ha` overrides and says
+so twice — once before the load and once in the verdict.
+
+**`--dry-run`.** Prints the plan and the terminal task order; changes nothing.
 
 ## How it works
 
@@ -266,7 +291,7 @@ in pairs: one unmeasured warmup pair, then alternating arm order, reporting the
 **median of the per-pair ratios**, because drift that moves both arms of a pair
 barely moves their ratio.
 
-| degree | loaddb | importdb | median ratio | |
+| degree | loaddb | importdb | median ratio | speedup |
 |---|---|---|---|---|
 | **1** | 5.70 s | 2.68 s | 0.481 &nbsp;(pairs 0.444 – 0.677) | **2.13× faster** |
 | **4** | 5.08 s | 1.67 s | 0.362 &nbsp;(pairs 0.327 – 0.410) | **3.04× faster** |
@@ -455,45 +480,31 @@ ctest --test-dir build --output-on-failure   # contract + smoke + functional
 paired imports at two degrees — budget half an hour for it, or run
 `tests/run_tests.sh` with the case names you want instead.
 
-| | |
-|---|---|
-| [`tests/`](tests/README.md) | 9 cases, 202 assertions: round-trip fidelity, dependency ordering, FK cycles, FK violations, `--dry-run`, `--degree`, resume after `SIGKILL`, refusals, and the performance comparison |
-| [`demo/`](demo/README.md) | 4 scenarios, 34 assertions — the `loaddb` contrast, the plan, the FK violation, and what parallelism actually depends on |
-| [`contract/`](contract/README.md) | What this repo depends on from CUBRID, enumerated and machine-checked: 41 static checks against an install, 16 runtime checks against a live database, plus a negative control that must fail |
-| [`docs/out-of-tree.md`](docs/out-of-tree.md) | How the build works against an engine it does not live in, and the libstdc++ ABI question |
+- [`tests/`](tests/README.md) — 9 cases, 202 assertions: round-trip fidelity,
+  dependency ordering, FK cycles, FK violations, `--dry-run`, `--degree`, resume
+  after `SIGKILL`, refusals, and the performance comparison.
+- [`demo/`](demo/README.md) — 4 scenarios, 34 assertions: the `loaddb` contrast,
+  the plan, the FK violation, and what parallelism actually depends on.
+- [`contract/`](contract/README.md) — what this repo depends on from CUBRID,
+  enumerated and machine-checked: 41 static checks against an install, 16 runtime
+  checks against a live database, plus a negative control that must fail.
+- [`docs/out-of-tree.md`](docs/out-of-tree.md) — how the build works against an
+  engine it does not live in, and the libstdc++ ABI question.
 
 ### Identity
 
-[`assets/`](assets/) holds three SVGs: `banner.svg` (the header at the top),
-`lifecycle.svg` (the figure in [The problem](#the-problem)), and `mark.svg` —
-the mark on its own, for a favicon, an avatar, or anywhere the banner is too wide.
+[`assets/`](assets/) holds `banner.svg` (the header at the top), `lifecycle.svg`
+(the figure in [The problem](#the-problem)), and `mark.svg` — the mark on its own,
+for a favicon, an avatar, or anywhere the banner is too wide. All three are
+theme-aware.
 
 <img src="assets/mark.svg" alt="CUBRID ImportDB mark" width="52" height="52">
 
-The mark is not the banner's tangram shrunk. Seven colours do not survive 16px,
-so it reduces the square to the three right-isosceles pieces it actually
-decomposes into — areas 4 + 4 + 8 — keeping the same 45° geometry, the same
-CUBRID palette, and the same gesture: one piece not yet seated. All three files
-are theme-aware, with light as the base palette and a `prefers-color-scheme: dark`
-block overriding only what must change, so a renderer that ignores the media
-query still gets a correct picture rather than an invalid one.
-
-Two workflows run in this repo — [`contract.yml`](.github/workflows/contract.yml)
-checks the CUBRID surface this code depends on, and
-[`nightly.yml`](.github/workflows/nightly.yml) builds and imports against a
-nightly engine. A third, `upstream-guard.yml.for-cubrid-repo`, is written to be
-installed **in the engine repo**, where it compiles this repo on every upstream PR
-that touches a path importdb depends on; the filename suffix means it does not run
-here.
-
 ## Provenance
 
-CUBRID ImportDB began as `cubrid importdb` inside the CUBRID engine tree, under
-the CUBRID Systems Research roadmap project **N54**. It changes no engine code and
-adds nothing to the server: it builds against the engine's source and configured
-build tree, links exactly one engine library (`libcubridcs`), and drives the
-existing `loaddb` loader for the data phase. The whole utility is orchestration
-over primitives CUBRID already had — [`contract/`](contract/README.md) enumerates
-every one of them and checks they are still there.
+CUBRID ImportDB began as `cubrid importdb` inside the CUBRID engine tree. It
+changes no engine code and adds nothing to the server: it builds against the
+engine's source and configured build tree, links exactly one engine library
+(`libcubridcs`), and drives the existing `loaddb` loader for the data phase.
 
 Apache License 2.0, following CUBRID. See [LICENSE](LICENSE).
