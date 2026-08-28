@@ -40,6 +40,7 @@
  */
 
 #include "import_strip.hpp"
+#include "import_progress.hpp"
 #include "import_resume.hpp"
 
 #include "db.h"
@@ -78,7 +79,7 @@ namespace
     int error = db_execute (stmt.c_str (), &result, &query_error);
     if (error < 0)
       {
-	PRINT_AND_LOG_ERR_MSG (msg (IMPORTDB_MSG_STRIP_STMT_FAILED), stmt.c_str (), db_error_string (3));
+	IMPORT_ERR (msg (IMPORTDB_MSG_STRIP_STMT_FAILED), stmt.c_str (), db_error_string (3));
 	return error;
       }
     db_query_end (result);
@@ -262,7 +263,7 @@ namespace cubimport
 	return strip_status::ERR_STRIP;
       }
 
-    fprintf (stdout, msg (IMPORTDB_MSG_STRIP_COMPLETE), (int) stripped.size (), graph.database_name.c_str ());
+    IMPORT_PRINT (msg (IMPORTDB_MSG_STRIP_COMPLETE), (int) stripped.size (), graph.database_name.c_str ());
     return strip_status::OK;
   }
 

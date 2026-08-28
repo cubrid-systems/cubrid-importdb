@@ -48,6 +48,7 @@
  */
 
 #include "import_triggers.hpp"
+#include "import_progress.hpp"
 
 #include "db.h"
 #include "authenticate.h"
@@ -99,7 +100,7 @@ namespace cubimport
     FILE *fp = fopen (file_path.c_str (), "r");
     if (fp == NULL)
       {
-	PRINT_AND_LOG_ERR_MSG (msg (IMPORTDB_MSG_TRIGGER_FILE_OPEN_FAILED), file_path.c_str (), strerror (errno));
+	IMPORT_ERR (msg (IMPORTDB_MSG_TRIGGER_FILE_OPEN_FAILED), file_path.c_str (), strerror (errno));
 	summary.failed++;
 	return trigger_status::PARTIAL;
       }
@@ -113,7 +114,7 @@ namespace cubimport
     if (session == NULL)
       {
 	assert (er_errid () != NO_ERROR);
-	PRINT_AND_LOG_ERR_MSG (msg (IMPORTDB_MSG_TRIGGER_STMT_FAILED), file_path.c_str (), 0, db_error_string (3));
+	IMPORT_ERR (msg (IMPORTDB_MSG_TRIGGER_STMT_FAILED), file_path.c_str (), 0, db_error_string (3));
 	AU_RESTORE (au_save);
 	fclose (fp);
 	summary.failed++;
@@ -150,7 +151,7 @@ namespace cubimport
 		      {
 			db_get_parser_line_col (session, &line, &col);
 		      }
-		    PRINT_AND_LOG_ERR_MSG (msg (IMPORTDB_MSG_TRIGGER_STMT_FAILED), file_path.c_str (), line,
+		    IMPORT_ERR (msg (IMPORTDB_MSG_TRIGGER_STMT_FAILED), file_path.c_str (), line,
 					   db_error_string (3));
 		  }
 		while (session_error);
@@ -184,12 +185,13 @@ namespace cubimport
 	     * next trigger statement can still run. */
 	    int line, col;
 	    db_get_parser_line_col (session, &line, &col);
-	    PRINT_AND_LOG_ERR_MSG (msg (IMPORTDB_MSG_TRIGGER_STMT_FAILED), file_path.c_str (), line, db_error_string (3));
+	    IMPORT_ERR (msg (IMPORTDB_MSG_TRIGGER_STMT_FAILED), file_path.c_str (), line, db_error_string (3));
 	    summary.failed++;
 	    continue;
 	  }
 	db_query_end (res);
 	summary.defined++;
+	cubimport::progress::set_detail ("defined " + std::to_string (summary.defined) + " trigger(s)");
       }
 
     db_close_session (session);
@@ -198,12 +200,12 @@ namespace cubimport
 
     if (summary.failed > 0)
       {
-	fprintf (stdout, msg (IMPORTDB_MSG_TRIGGER_PARTIAL), summary.defined, summary.failed,
+	IMPORT_PRINT (msg (IMPORTDB_MSG_TRIGGER_PARTIAL), summary.defined, summary.failed,
 		 iset.trigger_file.c_str ());
 	return trigger_status::PARTIAL;
       }
 
-    fprintf (stdout, msg (IMPORTDB_MSG_TRIGGER_COMPLETE), summary.defined, iset.trigger_file.c_str ());
+    IMPORT_PRINT (msg (IMPORTDB_MSG_TRIGGER_COMPLETE), summary.defined, iset.trigger_file.c_str ());
     return trigger_status::OK;
   }
 

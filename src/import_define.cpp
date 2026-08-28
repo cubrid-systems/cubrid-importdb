@@ -45,6 +45,7 @@
  */
 
 #include "import_define.hpp"
+#include "import_progress.hpp"
 
 #include "db.h"
 #include "authenticate.h"
@@ -116,7 +117,7 @@ namespace
       FILE *fp = fopen (file_path.c_str (), "r");
       if (fp == NULL)
 	{
-	  PRINT_AND_LOG_ERR_MSG (msg (IMPORTDB_MSG_DEFINE_FILE_OPEN_FAILED), file_path.c_str (), strerror (errno));
+	  IMPORT_ERR (msg (IMPORTDB_MSG_DEFINE_FILE_OPEN_FAILED), file_path.c_str (), strerror (errno));
 	  return ER_GENERIC_ERROR;
 	}
       char chunk[8192];
@@ -136,7 +137,7 @@ namespace
 	  {
 	    db_get_parser_line_col (session, &line, &col);
 	  }
-	PRINT_AND_LOG_ERR_MSG (msg (IMPORTDB_MSG_DEFINE_STMT_FAILED), file_path.c_str (), line, db_error_string (3));
+	IMPORT_ERR (msg (IMPORTDB_MSG_DEFINE_STMT_FAILED), file_path.c_str (), line, db_error_string (3));
 	if (session != NULL)
 	  {
 	    db_close_session (session);
@@ -145,6 +146,7 @@ namespace
       }
 
     int error = NO_ERROR;
+    int executed = 0;
     while (true)
       {
 	/* A buffer session has already parsed every statement; db_compile_statement
@@ -167,7 +169,7 @@ namespace
 		      {
 			db_get_parser_line_col (session, &line, &col);
 		      }
-		    PRINT_AND_LOG_ERR_MSG (msg (IMPORTDB_MSG_DEFINE_STMT_FAILED), file_path.c_str (), line,
+		    IMPORT_ERR (msg (IMPORTDB_MSG_DEFINE_STMT_FAILED), file_path.c_str (), line,
 					   db_error_string (3));
 		    assert (er_errid () != NO_ERROR);
 		    error = er_errid ();
@@ -198,16 +200,17 @@ namespace
 	  {
 	    int line, col;
 	    db_get_parser_line_col (session, &line, &col);
-	    PRINT_AND_LOG_ERR_MSG (msg (IMPORTDB_MSG_DEFINE_STMT_FAILED), file_path.c_str (), line, db_error_string (3));
+	    IMPORT_ERR (msg (IMPORTDB_MSG_DEFINE_STMT_FAILED), file_path.c_str (), line, db_error_string (3));
 	    db_close_session (session);
 	    break;
 	  }
+	cubimport::progress::set_detail ("executed " + std::to_string (++executed) + " definition statement(s)");
 	error = db_query_end (res);
 	if (error < 0)
 	  {
 	    int line, col;
 	    db_get_parser_line_col (session, &line, &col);
-	    PRINT_AND_LOG_ERR_MSG (msg (IMPORTDB_MSG_DEFINE_STMT_FAILED), file_path.c_str (), line, db_error_string (3));
+	    IMPORT_ERR (msg (IMPORTDB_MSG_DEFINE_STMT_FAILED), file_path.c_str (), line, db_error_string (3));
 	    db_close_session (session);
 	    break;
 	  }
@@ -274,7 +277,7 @@ namespace cubimport
       {
 	db_commit_transaction ();
       }
-    fprintf (stdout, msg (IMPORTDB_MSG_DEFINE_COMPLETE), iset.database_name.c_str ());
+    IMPORT_PRINT (msg (IMPORTDB_MSG_DEFINE_COMPLETE), iset.database_name.c_str ());
     return define_status::OK;
   }
 

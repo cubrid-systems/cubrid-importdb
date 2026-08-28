@@ -29,6 +29,7 @@
  */
 
 #include "import_discovery.hpp"
+#include "import_progress.hpp"
 
 #include "utility.h"
 #include "message_catalog.h"
@@ -188,7 +189,7 @@ namespace cubimport
     DIR *dirp = opendir (dump_dir);
     if (dirp == NULL)
       {
-	PRINT_AND_LOG_ERR_MSG (msg (IMPORTDB_MSG_DIR_OPEN_FAILED), dump_dir);
+	IMPORT_ERR (msg (IMPORTDB_MSG_DIR_OPEN_FAILED), dump_dir);
 	return discover_status::ERR_DIR_OPEN;
       }
 
@@ -215,7 +216,7 @@ namespace cubimport
     std::string prefix;
     if (entries.empty () || !derive_prefix (entries, prefix))
       {
-	PRINT_AND_LOG_ERR_MSG (msg (IMPORTDB_MSG_NO_DUMP), dump_dir);
+	IMPORT_ERR (msg (IMPORTDB_MSG_NO_DUMP), dump_dir);
 	return discover_status::ERR_NO_DUMP;
       }
     result.prefix = prefix;
@@ -262,7 +263,7 @@ namespace cubimport
 	  }
 	else if (looks_like_dump_artifact (e))
 	  {
-	    PRINT_AND_LOG_ERR_MSG (msg (IMPORTDB_MSG_PREFIX_MISMATCH), e.c_str (), prefix.c_str ());
+	    IMPORT_ERR (msg (IMPORTDB_MSG_PREFIX_MISMATCH), e.c_str (), prefix.c_str ());
 	    return discover_status::ERR_PREFIX_MISMATCH;
 	  }
       }
@@ -275,7 +276,7 @@ namespace cubimport
 	std::vector<std::string> manifest;
 	if (!read_manifest (path_join (dump_dir, result.schema_info_file), manifest))
 	  {
-	    PRINT_AND_LOG_ERR_MSG (msg (IMPORTDB_MSG_SCHEMA_INFO_MISSING), result.schema_info_file.c_str (),
+	    IMPORT_ERR (msg (IMPORTDB_MSG_SCHEMA_INFO_MISSING), result.schema_info_file.c_str (),
 				   result.schema_info_file.c_str ());
 	    return discover_status::ERR_SCHEMA_INFO_MISSING;
 	  }
@@ -283,7 +284,7 @@ namespace cubimport
 	  {
 	    if (!is_regular_file (path_join (dump_dir, named)))
 	      {
-		PRINT_AND_LOG_ERR_MSG (msg (IMPORTDB_MSG_SCHEMA_INFO_MISSING), result.schema_info_file.c_str (),
+		IMPORT_ERR (msg (IMPORTDB_MSG_SCHEMA_INFO_MISSING), result.schema_info_file.c_str (),
 				       named.c_str ());
 		return discover_status::ERR_SCHEMA_INFO_MISSING;
 	      }
@@ -296,14 +297,14 @@ namespace cubimport
       }
     else
       {
-	PRINT_AND_LOG_ERR_MSG (msg (IMPORTDB_MSG_NO_SCHEMA), dump_dir, prefix.c_str ());
+	IMPORT_ERR (msg (IMPORTDB_MSG_NO_SCHEMA), dump_dir, prefix.c_str ());
 	return discover_status::ERR_NO_SCHEMA;
       }
 
     /* 5. an object roster must be present. */
     if (result.object_files.empty ())
       {
-	PRINT_AND_LOG_ERR_MSG (msg (IMPORTDB_MSG_NO_OBJECTS), dump_dir, prefix.c_str ());
+	IMPORT_ERR (msg (IMPORTDB_MSG_NO_OBJECTS), dump_dir, prefix.c_str ());
 	return discover_status::ERR_NO_OBJECTS;
       }
 
@@ -339,7 +340,7 @@ namespace cubimport
     const std::string index_desc = result.index_file.empty () ? "(none)" : result.index_file;
     const std::string trigger_desc = result.trigger_file.empty () ? "(none)" : result.trigger_file;
 
-    fprintf (stdout, msg (IMPORTDB_MSG_DISCOVERY_SUMMARY), layout, result.prefix.c_str (), result.dump_dir.c_str (),
+    IMPORT_PRINT (msg (IMPORTDB_MSG_DISCOVERY_SUMMARY), layout, result.prefix.c_str (), result.dump_dir.c_str (),
 	     schema_desc.c_str (), object_desc.c_str (), index_desc.c_str (), trigger_desc.c_str ());
   }
 

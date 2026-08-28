@@ -42,6 +42,7 @@
  */
 
 #include "import_rebuild.hpp"
+#include "import_progress.hpp"
 #include "import_resume.hpp"
 
 #include "db.h"
@@ -369,7 +370,7 @@ namespace cubimport
 	const std::string full = path_join (iset.dump_dir, f);
 	if (read_file_text (full, text) != NO_ERROR)
 	  {
-	    PRINT_AND_LOG_ERR_MSG (msg (IMPORTDB_MSG_REBUILD_FILE_OPEN_FAILED), full.c_str (), strerror (errno));
+	    IMPORT_ERR (msg (IMPORTDB_MSG_REBUILD_FILE_OPEN_FAILED), full.c_str (), strerror (errno));
 	    hard_error = true;
 	    break;
 	  }
@@ -392,6 +393,8 @@ namespace cubimport
 	      {
 		continue;
 	      }
+	    cubimport::progress::set_counter ((int) (summary.rebuilt.size () + summary.pending.size ()),
+					      (int) pkuk_by_name.size (), targets.front ()->name);
 
 	    /* WU-50 resume guard: an interrupted prior rebuild may already have
 	     * re-added this constraint. Re-adding it would fail on "already
@@ -435,7 +438,7 @@ namespace cubimport
 		for (const stripped_constraint *c : targets)
 		  {
 		    summary.pending.push_back ({ c->kind, c->cls, c->name, reason, stmt + ";" });
-		    PRINT_AND_LOG_ERR_MSG (msg (IMPORTDB_MSG_REBUILD_CONSTRAINT_FAILED), rebuild_kind_keyword (c->kind),
+		    IMPORT_ERR (msg (IMPORTDB_MSG_REBUILD_CONSTRAINT_FAILED), rebuild_kind_keyword (c->kind),
 					   c->name.c_str (), c->cls.c_str (), reason.c_str ());
 		    withhold_child_fks (graph, c->cls, c->name, withheld_names, summary);
 		  }
@@ -454,7 +457,7 @@ namespace cubimport
 	const std::string full = path_join (iset.dump_dir, iset.index_file);
 	if (read_file_text (full, text) != NO_ERROR)
 	  {
-	    PRINT_AND_LOG_ERR_MSG (msg (IMPORTDB_MSG_REBUILD_FILE_OPEN_FAILED), full.c_str (), strerror (errno));
+	    IMPORT_ERR (msg (IMPORTDB_MSG_REBUILD_FILE_OPEN_FAILED), full.c_str (), strerror (errno));
 	    hard_error = true;
 	  }
 	else
@@ -472,6 +475,7 @@ namespace cubimport
 		    summary.indexes.push_back (index_name (stmt));
 		    continue;
 		  }
+		cubimport::progress::set_detail ("building index " + index_name (stmt));
 		int error = exec_stmt (stmt + ";");
 		if (error == NO_ERROR)
 		  {
@@ -480,7 +484,7 @@ namespace cubimport
 		else
 		  {
 		    const std::string reason = db_error_string (3);
-		    PRINT_AND_LOG_ERR_MSG (msg (IMPORTDB_MSG_REBUILD_INDEX_FAILED), index_name (stmt).c_str (),
+		    IMPORT_ERR (msg (IMPORTDB_MSG_REBUILD_INDEX_FAILED), index_name (stmt).c_str (),
 					   reason.c_str ());
 		    /* Recorded, not just counted: the phase is PARTIAL because of
 		     * this, and a resumed run re-derives that status from the
@@ -503,12 +507,12 @@ namespace cubimport
 
     if (partial)
       {
-	fprintf (stdout, msg (IMPORTDB_MSG_REBUILD_PARTIAL), (int) summary.rebuilt.size (),
+	IMPORT_PRINT (msg (IMPORTDB_MSG_REBUILD_PARTIAL), (int) summary.rebuilt.size (),
 		 (int) summary.pending.size (), graph.database_name.c_str (), (int) summary.withheld.size ());
 	return rebuild_status::PARTIAL;
       }
 
-    fprintf (stdout, msg (IMPORTDB_MSG_REBUILD_COMPLETE), (int) summary.rebuilt.size (), (int) summary.indexes.size (),
+    IMPORT_PRINT (msg (IMPORTDB_MSG_REBUILD_COMPLETE), (int) summary.rebuilt.size (), (int) summary.indexes.size (),
 	     graph.database_name.c_str ());
     return rebuild_status::OK;
   }

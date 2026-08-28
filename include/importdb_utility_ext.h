@@ -125,4 +125,16 @@ typedef enum
 
 #endif /* !IMPORTDB_ENGINE_HAS_DECLS */
 
+/* Added after the split, so no engine utility.h carries these -- they sit
+ * OUTSIDE the stand-down guard above and are individually guarded instead, which
+ * keeps the repo building against an engine that already has the older decls. */
+#ifndef IMPORT_PROGRESS_S
+#define IMPORT_PROGRESS_S           14208
+#define IMPORT_PROGRESS_L           "progress"
+#endif
+
+#ifndef IMPORTDB_MSG_PROGRESS_INVALID
+#define IMPORTDB_MSG_PROGRESS_INVALID 80
+#endif
+
 #endif /* _IMPORTDB_UTILITY_EXT_H_ */

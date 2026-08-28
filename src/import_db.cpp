@@ -106,6 +106,7 @@
 #include "import_stats.hpp"
 #include "import_triggers.hpp"
 #include "import_report.hpp"
+#include "import_progress.hpp"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -134,6 +135,8 @@ importdb (UTIL_FUNCTION_ARG *arg)
   bool dry_run;
   bool restart;
   bool allow_ha;
+  const char *progress_opt;
+  cubimport::progress::mode progress_mode = cubimport::progress::mode::AUTO;
   bool target_is_ha = false;
   /* EXIT_SUCCESS unless the Rebuild phase (WU-32) recorded a pending-rebuild:
    * a partial-but-committed run exits non-zero with the manifest as the record. */
@@ -161,11 +164,25 @@ importdb (UTIL_FUNCTION_ARG *arg)
   restart = utility_get_option_bool_value (arg_map, IMPORT_RESTART_S);
   allow_ha = utility_get_option_bool_value (arg_map, IMPORT_ALLOW_HA_S);
   exceptions_table = utility_get_option_string_value (arg_map, IMPORT_EXCEPTIONS_TABLE_S, 0);
+  progress_opt = utility_get_option_string_value (arg_map, IMPORT_PROGRESS_S, 0);
+
+  /* The live display is decided before anything can print, so that every line
+   * this run writes is written under one policy. AUTO leaves a non-terminal
+   * stdout - a pipe, a file, a CI log - with exactly the output it had before
+   * the display existed. */
+  if (progress_opt != NULL && !cubimport::progress::parse_mode (progress_opt, progress_mode))
+    {
+      IMPORT_ERR (msgcat_message (MSGCAT_CATALOG_UTILS, MSGCAT_UTIL_SET_IMPORTDB,
+				  IMPORTDB_MSG_PROGRESS_INVALID), progress_opt);
+      goto error_exit;
+    }
+  cubimport::progress::configure (progress_mode);
+  cubimport::progress::begin_run (database_name, dump_dir);
 
   /* D4 forward-compat: --exceptions-table is reserved and always errors out. */
   if (exceptions_table != NULL)
     {
-      PRINT_AND_LOG_ERR_MSG (msgcat_message (MSGCAT_CATALOG_UTILS, MSGCAT_UTIL_SET_IMPORTDB,
+      IMPORT_ERR (msgcat_message (MSGCAT_CATALOG_UTILS, MSGCAT_UTIL_SET_IMPORTDB,
 					     IMPORTDB_MSG_EXCEPTIONS_TABLE_RESERVED));
       goto error_exit;
     }
@@ -189,10 +206,12 @@ importdb (UTIL_FUNCTION_ARG *arg)
    * No server connection or data load happens here - those are later WUs. */
   {
     cubimport::import_set iset;
+    cubimport::progress::begin_phase (cubimport::progress::phase::DISCOVER);
     if (cubimport::discover (database_name, dump_dir, iset) != cubimport::discover_status::OK)
       {
 	goto error_exit;
       }
+    cubimport::progress::end_phase ();
     cubimport::print_import_set_summary (iset);
 
     const std::string manifest_path = iset.dump_dir + "/importdb.manifest";
@@ -227,7 +246,7 @@ importdb (UTIL_FUNCTION_ARG *arg)
 	     * Importing from scratch would define over a target that may already
 	     * be half imported, and the operator would never learn a resume was
 	     * available. */
-	    PRINT_AND_LOG_ERR_MSG (msgcat_message (MSGCAT_CATALOG_UTILS, MSGCAT_UTIL_SET_IMPORTDB,
+	    IMPORT_ERR (msgcat_message (MSGCAT_CATALOG_UTILS, MSGCAT_UTIL_SET_IMPORTDB,
 						   IMPORTDB_MSG_MANIFEST_UNREADABLE), manifest_path.c_str (),
 				   read_error.c_str ());
 	    goto error_exit;
@@ -237,7 +256,7 @@ importdb (UTIL_FUNCTION_ARG *arg)
 	  {
 	    if (restart)
 	      {
-		fprintf (stdout, msgcat_message (MSGCAT_CATALOG_UTILS, MSGCAT_UTIL_SET_IMPORTDB,
+		IMPORT_PRINT (msgcat_message (MSGCAT_CATALOG_UTILS, MSGCAT_UTIL_SET_IMPORTDB,
 						 IMPORTDB_MSG_RESTART_IGNORING), manifest_path.c_str (),
 			 iset.database_name.c_str ());
 		preserve_prior = true;
@@ -249,7 +268,7 @@ importdb (UTIL_FUNCTION_ARG *arg)
 		 * has_phase false and would be misreported as truncation. The
 		 * version comes from the preamble, so it is readable whatever
 		 * [phases] holds. */
-		fprintf (stdout, msgcat_message (MSGCAT_CATALOG_UTILS, MSGCAT_UTIL_SET_IMPORTDB,
+		IMPORT_PRINT (msgcat_message (MSGCAT_CATALOG_UTILS, MSGCAT_UTIL_SET_IMPORTDB,
 						 IMPORTDB_MSG_RESUME_NOT_POSSIBLE), manifest_path.c_str (),
 			 ("it was written in format v" + std::to_string (found.format_version)
 			  + " by a newer importdb, and this build reads up to v"
@@ -265,7 +284,7 @@ importdb (UTIL_FUNCTION_ARG *arg)
 		 * partial schema. Saying that about a database that may be fully
 		 * loaded is worse than saying nothing, so refuse without writing
 		 * or touching anything. */
-		PRINT_AND_LOG_ERR_MSG (msgcat_message (MSGCAT_CATALOG_UTILS, MSGCAT_UTIL_SET_IMPORTDB,
+		IMPORT_ERR (msgcat_message (MSGCAT_CATALOG_UTILS, MSGCAT_UTIL_SET_IMPORTDB,
 						       IMPORTDB_MSG_MANIFEST_CORRUPT), manifest_path.c_str ());
 		goto error_exit;
 	      }
@@ -295,13 +314,13 @@ importdb (UTIL_FUNCTION_ARG *arg)
 		if (unresolved_keys == 0 && unresolved_fks == 0 && unresolved_stats == 0 && unresolved_triggers == 0
 		    && unresolved_orphans == 0)
 		  {
-		    fprintf (stdout, msgcat_message (MSGCAT_CATALOG_UTILS, MSGCAT_UTIL_SET_IMPORTDB,
+		    IMPORT_PRINT (msgcat_message (MSGCAT_CATALOG_UTILS, MSGCAT_UTIL_SET_IMPORTDB,
 						     IMPORTDB_MSG_ALREADY_DONE), iset.database_name.c_str (),
 			     manifest_path.c_str ());
 		    return EXIT_SUCCESS;
 		  }
 
-		PRINT_AND_LOG_ERR_MSG (msgcat_message (MSGCAT_CATALOG_UTILS, MSGCAT_UTIL_SET_IMPORTDB,
+		IMPORT_ERR (msgcat_message (MSGCAT_CATALOG_UTILS, MSGCAT_UTIL_SET_IMPORTDB,
 						       IMPORTDB_MSG_ALREADY_DONE_PARTIAL), iset.database_name.c_str (),
 				       unresolved_keys, unresolved_fks, unresolved_stats, unresolved_triggers,
 				       manifest_path.c_str ());
@@ -364,7 +383,7 @@ importdb (UTIL_FUNCTION_ARG *arg)
 
 		if (!why.empty ())
 		  {
-		    fprintf (stdout, msgcat_message (MSGCAT_CATALOG_UTILS, MSGCAT_UTIL_SET_IMPORTDB,
+		    IMPORT_PRINT (msgcat_message (MSGCAT_CATALOG_UTILS, MSGCAT_UTIL_SET_IMPORTDB,
 						     IMPORTDB_MSG_RESUME_NOT_POSSIBLE), manifest_path.c_str (),
 			     why.c_str (), iset.database_name.c_str ());
 		    preserve_prior = true;
@@ -373,7 +392,7 @@ importdb (UTIL_FUNCTION_ARG *arg)
 		  {
 		    prior = found;
 		    resuming = true;
-		    fprintf (stdout, msgcat_message (MSGCAT_CATALOG_UTILS, MSGCAT_UTIL_SET_IMPORTDB,
+		    IMPORT_PRINT (msgcat_message (MSGCAT_CATALOG_UTILS, MSGCAT_UTIL_SET_IMPORTDB,
 						     IMPORTDB_MSG_RESUME_START), iset.database_name.c_str (),
 			     manifest_path.c_str (), cubimport::phase_name (prior.reached));
 		  }
@@ -410,7 +429,7 @@ importdb (UTIL_FUNCTION_ARG *arg)
 	    std::string saved;
 	    if (cubimport::preserve_manifest (iset.dump_dir, saved))
 	      {
-		fprintf (stdout, msgcat_message (MSGCAT_CATALOG_UTILS, MSGCAT_UTIL_SET_IMPORTDB,
+		IMPORT_PRINT (msgcat_message (MSGCAT_CATALOG_UTILS, MSGCAT_UTIL_SET_IMPORTDB,
 						 IMPORTDB_MSG_MANIFEST_PRESERVED), saved.c_str (),
 			 manifest_path.c_str ());
 	      }
@@ -418,7 +437,7 @@ importdb (UTIL_FUNCTION_ARG *arg)
 	      {
 		/* Overwriting anyway would lose the record silently, which is the
 		 * whole failure this preserve step exists to prevent. */
-		PRINT_AND_LOG_ERR_MSG (msgcat_message (MSGCAT_CATALOG_UTILS, MSGCAT_UTIL_SET_IMPORTDB,
+		IMPORT_ERR (msgcat_message (MSGCAT_CATALOG_UTILS, MSGCAT_UTIL_SET_IMPORTDB,
 						       IMPORTDB_MSG_MANIFEST_PRESERVE_FAILED), manifest_path.c_str (),
 				       strerror (errno));
 		goto error_exit;
@@ -468,13 +487,13 @@ importdb (UTIL_FUNCTION_ARG *arg)
 	  target_is_ha = true;
 	  if (!allow_ha)
 	    {
-	      PRINT_AND_LOG_ERR_MSG (msgcat_message (MSGCAT_CATALOG_UTILS, MSGCAT_UTIL_SET_IMPORTDB,
+	      IMPORT_ERR (msgcat_message (MSGCAT_CATALOG_UTILS, MSGCAT_UTIL_SET_IMPORTDB,
 						     IMPORTDB_MSG_HA_REFUSED), iset.database_name.c_str (),
 				     ha_state_name);
 	      cubimport::session_close (false);
 	      goto error_exit;
 	    }
-	  PRINT_AND_LOG_ERR_MSG (msgcat_message (MSGCAT_CATALOG_UTILS, MSGCAT_UTIL_SET_IMPORTDB,
+	  IMPORT_ERR (msgcat_message (MSGCAT_CATALOG_UTILS, MSGCAT_UTIL_SET_IMPORTDB,
 						 IMPORTDB_MSG_HA_PROCEEDING), iset.database_name.c_str (),
 				 ha_state_name);
 	}
@@ -491,11 +510,13 @@ importdb (UTIL_FUNCTION_ARG *arg)
      * already defined and this phase is skipped. */
     if (!resuming)
       {
+	cubimport::progress::begin_phase (cubimport::progress::phase::DEFINE);
 	if (cubimport::define (iset, !dry_run) != cubimport::define_status::OK)
 	  {
 	    cubimport::session_close (false);
 	    goto error_exit;
 	  }
+	cubimport::progress::end_phase ();
 
 	/* On a normal run define committed durably, so record the DEFINED phase
 	 * now - the graph snapshot below enriches this manifest with a [graph]
@@ -523,6 +544,7 @@ importdb (UTIL_FUNCTION_ARG *arg)
      * with nothing to rebuild or re-validate. */
     {
       cubimport::dependency_graph graph;
+      cubimport::progress::begin_phase (cubimport::progress::phase::GRAPH);
       if (resuming && prior.has_graph)
 	{
 	  graph = prior.graph;
@@ -536,6 +558,7 @@ importdb (UTIL_FUNCTION_ARG *arg)
 	  cubimport::session_close (false);
 	  goto error_exit;
 	}
+      cubimport::progress::end_phase ();
       cubimport::print_graph_summary (graph);
 
       /* Re-write the DEFINED manifest, now enriched with the graph snapshot
@@ -558,11 +581,13 @@ importdb (UTIL_FUNCTION_ARG *arg)
        * it. */
       {
 	cubimport::schedule sched;
+	cubimport::progress::begin_phase (cubimport::progress::phase::PLAN);
 	if (cubimport::build_schedule (graph, iset, sched) != cubimport::build_schedule_status::OK)
 	  {
 	    cubimport::session_close (false);
 	    goto error_exit;
 	  }
+	cubimport::progress::end_phase ();
 	cubimport::print_schedule (sched);
 
 	/* Re-write the DEFINED manifest with the real [plan] section (data-level
@@ -580,7 +605,7 @@ importdb (UTIL_FUNCTION_ARG *arg)
 	 * schema is rolled back and the target DB is left completely unchanged. */
 	if (dry_run)
 	  {
-	    fprintf (stdout, msgcat_message (MSGCAT_CATALOG_UTILS, MSGCAT_UTIL_SET_IMPORTDB,
+	    IMPORT_PRINT (msgcat_message (MSGCAT_CATALOG_UTILS, MSGCAT_UTIL_SET_IMPORTDB,
 					     IMPORTDB_MSG_DRY_RUN_COMPLETE), iset.database_name.c_str ());
 	    cubimport::session_close (false);
 	    return EXIT_SUCCESS;
@@ -636,7 +661,7 @@ importdb (UTIL_FUNCTION_ARG *arg)
 	    if (!cubimport::verify_resume_target (graph, prior.stripped, constraints_must_be_absent,
 						  classes_must_be_empty, present, mismatch))
 	      {
-		PRINT_AND_LOG_ERR_MSG (msgcat_message (MSGCAT_CATALOG_UTILS, MSGCAT_UTIL_SET_IMPORTDB,
+		IMPORT_ERR (msgcat_message (MSGCAT_CATALOG_UTILS, MSGCAT_UTIL_SET_IMPORTDB,
 						       IMPORTDB_MSG_RESUME_TARGET_MISMATCH),
 				       iset.database_name.c_str (), mismatch.c_str ());
 		cubimport::session_close (false);
@@ -671,11 +696,13 @@ importdb (UTIL_FUNCTION_ARG *arg)
 	 * the named diagnostic; abort the transaction and fail the run. */
 	if (prior.reached < cubimport::import_phase::STRIPPED)
 	  {
+	    cubimport::progress::begin_phase (cubimport::progress::phase::STRIP);
 	    if (cubimport::strip (graph, stripped, guard_strip ? &present : NULL) != cubimport::strip_status::OK)
 	      {
 		cubimport::session_close (false);
 		goto error_exit;
 	      }
+	    cubimport::progress::end_phase ();
 
 	    /* Commit BEFORE advancing the marker (every phase below does the
 	     * same). This is what makes the manifest a resume basis rather than a
@@ -730,7 +757,7 @@ importdb (UTIL_FUNCTION_ARG *arg)
 		    cubimport::session_close (false);
 		    goto error_exit;
 		  }
-		fprintf (stdout, msgcat_message (MSGCAT_CATALOG_UTILS, MSGCAT_UTIL_SET_IMPORTDB,
+		IMPORT_PRINT (msgcat_message (MSGCAT_CATALOG_UTILS, MSGCAT_UTIL_SET_IMPORTDB,
 						 IMPORTDB_MSG_RESUME_TRUNCATED), truncated);
 	      }
 
@@ -745,8 +772,10 @@ importdb (UTIL_FUNCTION_ARG *arg)
 		cubimport::session_close (false);
 		goto error_exit;
 	      }
+	    cubimport::progress::begin_phase (cubimport::progress::phase::LOAD);
 	    cubimport::load_data_status lst =
 	      cubimport::load_data (iset, graph, summary, degree, user_name, password);
+	    cubimport::progress::end_phase ();
 	    if (lst != cubimport::load_data_status::OK)
 	      {
 		cubimport::session_close (false);
@@ -782,7 +811,9 @@ importdb (UTIL_FUNCTION_ARG *arg)
 	 * (ERR_REBUILD) aborts. */
 	if (prior.reached < cubimport::import_phase::REBUILT)
 	  {
+	    cubimport::progress::begin_phase (cubimport::progress::phase::REBUILD);
 	    rst = cubimport::rebuild (iset, graph, stripped, rb, guard_rebuild ? &present : NULL);
+	    cubimport::progress::end_phase ();
 	    if (rst == cubimport::rebuild_status::ERR_REBUILD)
 	      {
 		cubimport::session_close (false);
@@ -845,8 +876,10 @@ importdb (UTIL_FUNCTION_ARG *arg)
 		cubimport::session_close (false);
 		goto error_exit;
 	      }
+	    cubimport::progress::begin_phase (cubimport::progress::phase::FKDEFINE);
 	    fst = cubimport::define_fks (iset, graph, rb, continue_on_error, vs, fs,
 					 guard_fkdefine ? &present : NULL);
+	    cubimport::progress::end_phase ();
 	    vst = (vs.violated_edges > 0) ? cubimport::validate_status::VIOLATED : cubimport::validate_status::OK;
 	    if (fst == cubimport::fkdefine_status::ERR_FKDEFINE)
 	      {
@@ -886,7 +919,9 @@ importdb (UTIL_FUNCTION_ARG *arg)
 	 * resume is idempotent, so this phase needs no guard either. */
 	if (prior.reached < cubimport::import_phase::STATS_UPDATED)
 	  {
+	    cubimport::progress::begin_phase (cubimport::progress::phase::STATS);
 	    sst = cubimport::update_stats (iset, graph, ss);
+	    cubimport::progress::end_phase ();
 
 	    /* Record the statistics outcome (updated + failed classes) and advance
 	     * the phase marker to STATS_UPDATED. */
@@ -915,7 +950,9 @@ importdb (UTIL_FUNCTION_ARG *arg)
 	 * phase continues; the run exits non-zero but never aborts (the imported data
 	 * + constraints must survive). A dump with no trigger file is nothing to do.
 	 * This phase always runs: a manifest that reached DONE returned above. */
+	cubimport::progress::begin_phase (cubimport::progress::phase::TRIGGERS);
 	tst = cubimport::define_triggers (iset, ts, guard_triggers);
+	cubimport::progress::end_phase ();
 
 	/* Record the trigger outcome and advance the phase marker to DONE - the
 	 * importdb pipeline is functionally complete. This final manifest carries the
@@ -962,7 +999,7 @@ importdb (UTIL_FUNCTION_ARG *arg)
 	 * else in this output would reveal that. */
 	if (target_is_ha)
 	  {
-	    PRINT_AND_LOG_ERR_MSG (msgcat_message (MSGCAT_CATALOG_UTILS, MSGCAT_UTIL_SET_IMPORTDB,
+	    IMPORT_ERR (msgcat_message (MSGCAT_CATALOG_UTILS, MSGCAT_UTIL_SET_IMPORTDB,
 						   IMPORTDB_MSG_HA_SLAVE_DIVERGED), iset.database_name.c_str ());
 	  }
 
@@ -973,6 +1010,7 @@ importdb (UTIL_FUNCTION_ARG *arg)
 	 * counts) from the output alone (G5). A pure pass over the in-memory summaries;
 	 * the dry-run and hard-error paths return before here and print their own
 	 * terminal message. */
+	cubimport::progress::finish ();
 	cubimport::print_report (iset, graph, sched, summary, rb, vs, fs, ss, ts);
       }
     }
@@ -981,11 +1019,14 @@ importdb (UTIL_FUNCTION_ARG *arg)
   return exit_code;
 
 print_import_usage:
-  fprintf (stderr, msgcat_message (MSGCAT_CATALOG_UTILS, MSGCAT_UTIL_SET_IMPORTDB, IMPORTDB_MSG_USAGE),
+  cubimport::progress::finish ();
+  IMPORT_WARN (msgcat_message (MSGCAT_CATALOG_UTILS, MSGCAT_UTIL_SET_IMPORTDB, IMPORTDB_MSG_USAGE),
 	   basename (arg->argv0));
   util_log_write_errid (MSGCAT_UTIL_GENERIC_INVALID_ARGUMENT);
 
 error_exit:
+  cubimport::progress::finish ();
+
   /* G5's last clause - "an operator can determine, from importdb output alone,
    * ... a resume point" - and the one place it can be honoured. A run that is
    * KILLED never reaches the Reporter, and a run that completes has no resume
@@ -1004,7 +1045,7 @@ error_exit:
 	  && left.reached > cubimport::import_phase::DISCOVERED)
 	{
 	  const std::string path = std::string (dump_dir) + "/importdb.manifest";
-	  fprintf (stdout, msgcat_message (MSGCAT_CATALOG_UTILS, MSGCAT_UTIL_SET_IMPORTDB,
+	  IMPORT_PRINT (msgcat_message (MSGCAT_CATALOG_UTILS, MSGCAT_UTIL_SET_IMPORTDB,
 					   IMPORTDB_MSG_PARTIALLY_IMPORTED), database_name,
 		   cubimport::phase_name (left.reached), path.c_str ());
 	}

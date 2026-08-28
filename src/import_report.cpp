@@ -31,6 +31,7 @@
  */
 
 #include "import_report.hpp"
+#include "import_progress.hpp"
 
 #include "import_discovery.hpp"
 #include "import_graph.hpp"
@@ -129,41 +130,41 @@ namespace cubimport
 			 || !stats.failed.empty () || triggers.failed > 0;
     const char *verdict = partial ? "PARTIAL" : "COMPLETE";
 
-    fprintf (stdout, msg (IMPORTDB_MSG_REPORT_HEADER), iset.database_name.c_str (), verdict);
+    IMPORT_PRINT (msg (IMPORTDB_MSG_REPORT_HEADER), iset.database_name.c_str (), verdict);
 
     /* planned data order - the Schedule's level sets. */
-    fprintf (stdout, "  planned data order (%d level(s)):\n", (int) sched.data_levels.size ());
+    IMPORT_PRINT ("  planned data order (%d level(s)):\n", (int) sched.data_levels.size ());
     for (size_t i = 0; i < sched.data_levels.size (); i++)
       {
-	fprintf (stdout, "      L%d: %s\n", (int) i, join_level (sched.data_levels[i]).c_str ());
+	IMPORT_PRINT ("      L%d: %s\n", (int) i, join_level (sched.data_levels[i]).c_str ());
       }
 
     /* per-class state (graph.nodes is sorted by class name). */
-    fprintf (stdout, "  classes (%d imported, %d skipped):\n", (int) graph.nodes.size (),
+    IMPORT_PRINT ("  classes (%d imported, %d skipped):\n", (int) graph.nodes.size (),
 	     (int) graph.skipped_classes.size ());
     for (const graph_node &n : graph.nodes)
       {
 	const char *state = pending.count (n.name) ? "pending" : "done";
 	const char *note = stats_stale.count (n.name) ? "  [statistics stale - update failed]" : "";
-	fprintf (stdout, "      %-8s %s%s\n", state, n.name.c_str (), note);
+	IMPORT_PRINT ("      %-8s %s%s\n", state, n.name.c_str (), note);
       }
     for (const std::string &c : graph.skipped_classes)
       {
-	fprintf (stdout, "      %-8s %s  [object-valued; excluded by --skip-object-classes]\n", "skipped", c.c_str ());
+	IMPORT_PRINT ("      %-8s %s  [object-valued; excluded by --skip-object-classes]\n", "skipped", c.c_str ());
       }
 
     /* loaded rows - total then per object file. */
-    fprintf (stdout, "  loaded: %ld row(s) from %d object file(s)\n", (long) load.total_rows, load.loaded_files);
+    IMPORT_PRINT ("  loaded: %ld row(s) from %d object file(s)\n", (long) load.total_rows, load.loaded_files);
     for (const load_file_result &f : load.files)
       {
 	if (f.failed > 0)
 	  {
-	    fprintf (stdout, "      %s: %ld row(s), %ld failed\n", f.object_file.c_str (), (long) f.rows,
+	    IMPORT_PRINT ("      %s: %ld row(s), %ld failed\n", f.object_file.c_str (), (long) f.rows,
 		     (long) f.failed);
 	  }
 	else
 	  {
-	    fprintf (stdout, "      %s: %ld row(s)\n", f.object_file.c_str (), (long) f.rows);
+	    IMPORT_PRINT ("      %s: %ld row(s)\n", f.object_file.c_str (), (long) f.rows);
 	  }
       }
 
@@ -171,13 +172,13 @@ namespace cubimport
      * terminal rebuild failed. re-add is from the dump's own PK/UK statement. */
     if (!rebuild.pending.empty ())
       {
-	fprintf (stdout, "  pending rebuilds (%d) -- re-add from the dump's schema, then re-run:\n",
+	IMPORT_PRINT ("  pending rebuilds (%d) -- re-add from the dump's schema, then re-run:\n",
 		 (int) rebuild.pending.size ());
 	for (const pending_rebuild &p : rebuild.pending)
 	  {
-	    fprintf (stdout, "      %s %s [%s] :: %s\n", stripped_kind_name (p.kind), p.cls.c_str (), p.name.c_str (),
+	    IMPORT_PRINT ("      %s %s [%s] :: %s\n", stripped_kind_name (p.kind), p.cls.c_str (), p.name.c_str (),
 		     p.reason.c_str ());
-	    fprintf (stdout, "        re-add: %s\n", p.readd_ddl.c_str ());
+	    IMPORT_PRINT ("        re-add: %s\n", p.readd_ddl.c_str ());
 	  }
       }
 
@@ -187,11 +188,11 @@ namespace cubimport
      * say so too, which is why the manifest carries them). */
     if (!rebuild.failed_indexes.empty ())
       {
-	fprintf (stdout, "  indexes not built (%d) -- re-create from the dump's index file:\n",
+	IMPORT_PRINT ("  indexes not built (%d) -- re-create from the dump's index file:\n",
 		 (int) rebuild.failed_indexes.size ());
 	for (const failed_index &f : rebuild.failed_indexes)
 	  {
-	    fprintf (stdout, "      %s :: %s\n", f.name.c_str (), f.reason.c_str ());
+	    IMPORT_PRINT ("      %s :: %s\n", f.name.c_str (), f.reason.c_str ());
 	  }
       }
 
@@ -199,26 +200,26 @@ namespace cubimport
      * un-rebuilt), each with the exact re-add DDL an operator runs after repair. */
     if (!fkdefine.withheld.empty ())
       {
-	fprintf (stdout, "  withheld FKs (%d) -- defined after the data is repaired:\n",
+	IMPORT_PRINT ("  withheld FKs (%d) -- defined after the data is repaired:\n",
 		 (int) fkdefine.withheld.size ());
 	for (const withheld_define &w : fkdefine.withheld)
 	  {
-	    fprintf (stdout, "      %s -> %s (%s) :: %s\n", w.child.c_str (), w.parent.c_str (), w.name.c_str (),
+	    IMPORT_PRINT ("      %s -> %s (%s) :: %s\n", w.child.c_str (), w.parent.c_str (), w.name.c_str (),
 		     w.reason.c_str ());
-	    fprintf (stdout, "        re-add: %s\n", w.readd_ddl.c_str ());
+	    IMPORT_PRINT ("        re-add: %s\n", w.readd_ddl.c_str ());
 	  }
       }
 
     /* Where the machine-readable records live (offending rows + full re-add DDL). */
     if (!validate.exceptions_file.empty ())
       {
-	fprintf (stdout, "  offending rows enumerated in: %s\n", validate.exceptions_file.c_str ());
+	IMPORT_PRINT ("  offending rows enumerated in: %s\n", validate.exceptions_file.c_str ());
       }
 
     const int skipped = (int) graph.skipped_classes.size ();
     const int pending_cnt = (int) pending.size ();
     const int done = (int) graph.nodes.size () - pending_cnt;
-    fprintf (stdout, msg (IMPORTDB_MSG_REPORT_SUMMARY), iset.database_name.c_str (), verdict, done, skipped,
+    IMPORT_PRINT (msg (IMPORTDB_MSG_REPORT_SUMMARY), iset.database_name.c_str (), verdict, done, skipped,
 	     pending_cnt, (int) fkdefine.withheld.size (), (long) load.total_rows, iset.dump_dir.c_str ());
   }
 

@@ -50,6 +50,7 @@
  * loaded with loaddb's own --ignore-class-file.
  */
 #include "import_load.hpp"
+#include "import_progress.hpp"
 
 
 #include "db.h"
@@ -72,6 +73,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <ctime>
 #include <cerrno>
 #include <chrono>
 #include <climits>
@@ -401,7 +403,7 @@ namespace cubimport
     tmpl.push_back ('\0');
     if (mkdtemp (tmpl.data ()) == NULL)
       {
-	PRINT_AND_LOG_ERR_MSG (msg (IMPORTDB_MSG_LOAD_FAILED), "(parallel load setup)",
+	IMPORT_ERR (msg (IMPORTDB_MSG_LOAD_FAILED), "(parallel load setup)",
 			       "cannot create a temporary directory for the parallel load");
 	return load_data_status::ERR_LOAD;
       }
@@ -416,7 +418,7 @@ namespace cubimport
 	if (f == NULL)
 	  {
 	    /* fail fast rather than hand the children a missing --ignore-class-file */
-	    PRINT_AND_LOG_ERR_MSG (msg (IMPORTDB_MSG_LOAD_FAILED), ignore_file.c_str (), strerror (errno));
+	    IMPORT_ERR (msg (IMPORTDB_MSG_LOAD_FAILED), ignore_file.c_str (), strerror (errno));
 	    rmdir (scratch.c_str ());
 	    return load_data_status::ERR_LOAD;
 	  }
@@ -434,6 +436,22 @@ namespace cubimport
       {
 	deg = (int) files.size ();
       }
+
+    /* Hand the display the extent it will measure against. The loaders are
+     * separate processes that report nothing until they exit, so the only
+     * progress signal is how far each has read into its object file - which
+     * needs the file's size to mean anything. A file that cannot be stat'ed
+     * contributes 0 and simply shows no bar. */
+    std::vector<std::string> abs_files;
+    std::vector<off_t> sizes;
+    for (const std::string &f : files)
+      {
+	const std::string full = path_join (dump_dir_abs, f);
+	struct stat st;
+	abs_files.push_back (full);
+	sizes.push_back (stat (full.c_str (), &st) == 0 ? st.st_size : (off_t) 0);
+      }
+    cubimport::progress::load_begin (abs_files, sizes, deg);
 
     std::map<pid_t, size_t> pid_idx;
     std::vector<std::string> logs (files.size ());
@@ -462,13 +480,24 @@ namespace cubimport
 	      {
 		pid_idx[pid] = next;
 		running++;
+		cubimport::progress::load_child (next, pid);
 	      }
 	    next++;
 	  }
 	if (running > 0)
 	  {
 	    int status = 0;
-	    pid_t done = waitpid (-1, &status, 0);
+	    /* With the display up the wait has to come back periodically so the
+	     * block can be redrawn; without it, block exactly as before so a
+	     * non-interactive run keeps its old syscall behaviour. */
+	    pid_t done = waitpid (-1, &status, cubimport::progress::live () ? WNOHANG : 0);
+	    if (done == 0)
+	      {
+		cubimport::progress::tick ();
+		struct timespec nap = { 0, 60L * 1000L * 1000L };	/* 60 ms */
+		nanosleep (&nap, NULL);
+		continue;
+	      }
 	    if (done > 0 && pid_idx.count (done))
 	      {
 		/* only account for OUR tracked children (guards against reaping an
@@ -476,6 +505,7 @@ namespace cubimport
 		size_t idx = pid_idx[done];
 		pid_idx.erase (done);
 		running--;
+		cubimport::progress::load_child_done (idx);
 		int ec = WIFEXITED (status) ? WEXITSTATUS (status) : -1;
 		if (ec != 0 && !any_fail)
 		  {
@@ -506,7 +536,7 @@ namespace cubimport
       {
 	/* a child failed: name the object file + the child's last log line, and
 	 * leave the scratch logs in place for the operator to inspect. */
-	PRINT_AND_LOG_ERR_MSG (msg (IMPORTDB_MSG_LOAD_FAILED), fail_file.c_str (), fail_msg.c_str ());
+	IMPORT_ERR (msg (IMPORTDB_MSG_LOAD_FAILED), fail_file.c_str (), fail_msg.c_str ());
 	return load_data_status::ERR_LOAD;
       }
 
@@ -516,7 +546,9 @@ namespace cubimport
      * would have exited non-zero and been caught above, so the per-file `failed`
      * is 0 here by construction. A count-query failure is surfaced (not silently
      * reported as 0 rows) but does not fail the run - the data is committed. */
+    cubimport::progress::load_end ();
     db_commit_transaction ();
+    cubimport::progress::set_detail ("counting the loaded rows");
     if (iset.object_kind == object_layout::PER_CLASS)
       {
 	for (const std::string &object_file : files)
@@ -525,7 +557,7 @@ namespace cubimport
 	    int64_t n = cls.empty () ? 0 : class_row_count (cls);
 	    if (n < 0)
 	      {
-		fprintf (stderr, "importdb: warning: post-load row count for '%s' unavailable; "
+		IMPORT_WARN ("importdb: warning: post-load row count for '%s' unavailable; "
 			 "manifest row totals may be incomplete\n", cls.c_str ());
 		n = 0;
 	      }
@@ -537,12 +569,14 @@ namespace cubimport
     else
       {
 	int64_t total = 0;
+	int counted = 0;
 	for (const graph_node &nd : graph.nodes)
 	  {
+	    cubimport::progress::set_counter (counted++, (int) graph.nodes.size (), nd.name);
 	    int64_t c = class_row_count (nd.name);
 	    if (c < 0)
 	      {
-		fprintf (stderr, "importdb: warning: post-load row count for '%s' unavailable; "
+		IMPORT_WARN ("importdb: warning: post-load row count for '%s' unavailable; "
 			 "manifest row totals may be incomplete\n", nd.name.c_str ());
 		continue;
 	      }
@@ -572,12 +606,12 @@ namespace cubimport
 
     if (deg > 1)
       {
-	fprintf (stdout, msg (IMPORTDB_MSG_LOAD_PARALLEL_COMPLETE), (long) summary.total_rows, summary.loaded_files,
+	IMPORT_PRINT (msg (IMPORTDB_MSG_LOAD_PARALLEL_COMPLETE), (long) summary.total_rows, summary.loaded_files,
 		 iset.database_name.c_str (), deg);
       }
     else
       {
-	fprintf (stdout, msg (IMPORTDB_MSG_LOAD_COMPLETE), (long) summary.total_rows, summary.loaded_files,
+	IMPORT_PRINT (msg (IMPORTDB_MSG_LOAD_COMPLETE), (long) summary.total_rows, summary.loaded_files,
 		 iset.database_name.c_str ());
       }
     return load_data_status::OK;

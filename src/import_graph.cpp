@@ -30,6 +30,7 @@
  */
 
 #include "import_graph.hpp"
+#include "import_progress.hpp"
 
 #include "db.h"
 #include "dbtype.h"
@@ -336,7 +337,7 @@ namespace cubimport
 
     if (error != NO_ERROR)
       {
-	PRINT_AND_LOG_ERR_MSG (msg (IMPORTDB_MSG_GRAPH_QUERY_FAILED), iset.database_name.c_str (),
+	IMPORT_ERR (msg (IMPORTDB_MSG_GRAPH_QUERY_FAILED), iset.database_name.c_str (),
 			       db_error_string (3));
 	return build_graph_status::ERR_CATALOG;
       }
@@ -430,7 +431,7 @@ namespace cubimport
 	      }
 	    detail += offending[i] + " (" + join_object_columns (obj_cols[offending[i]]) + ")";
 	  }
-	PRINT_AND_LOG_ERR_MSG (msg (IMPORTDB_MSG_OBJECT_CLASSES_REJECTED), detail.c_str ());
+	IMPORT_ERR (msg (IMPORTDB_MSG_OBJECT_CLASSES_REJECTED), detail.c_str ());
 	return build_graph_status::ERR_OBJECT_CLASSES;
       }
 
@@ -444,7 +445,7 @@ namespace cubimport
      * cryptically at the load phase. PER_CLASS dumps skip the whole file cleanly. */
     if (!offending.empty () && iset.object_kind == object_layout::SINGLE)
       {
-	PRINT_AND_LOG_ERR_MSG (msg (IMPORTDB_MSG_OBJECT_CLASSES_SINGLE), iset.prefix.c_str (),
+	IMPORT_ERR (msg (IMPORTDB_MSG_OBJECT_CLASSES_SINGLE), iset.prefix.c_str (),
 			       join_list (offending).c_str ());
 	return build_graph_status::ERR_OBJECT_CLASSES;
       }
@@ -454,7 +455,7 @@ namespace cubimport
       {
 	graph.skipped_classes = offending;	/* already sorted (classes is sorted) */
 	skipped.insert (offending.begin (), offending.end ());
-	fprintf (stdout, msg (IMPORTDB_MSG_OBJECT_CLASSES_SKIPPED), (int) offending.size (),
+	IMPORT_PRINT (msg (IMPORTDB_MSG_OBJECT_CLASSES_SKIPPED), (int) offending.size (),
 		 join_list (offending).c_str ());
       }
 
@@ -579,7 +580,7 @@ namespace cubimport
 	serial_count += n.serials.size ();
       }
 
-    fprintf (stdout, msg (IMPORTDB_MSG_GRAPH_SUMMARY), graph.database_name.c_str (), (int) graph.nodes.size (),
+    IMPORT_PRINT (msg (IMPORTDB_MSG_GRAPH_SUMMARY), graph.database_name.c_str (), (int) graph.nodes.size (),
 	     (int) graph.fk_edges.size (), (int) graph.inherit_edges.size (), (int) serial_count);
 
     for (const graph_node &n : graph.nodes)
@@ -608,38 +609,38 @@ namespace cubimport
 	      }
 	    tags += "serials=[" + join_list (n.serials) + "]";
 	  }
-	fprintf (stdout, "  - %s: %s%s%s%s\n", n.name.c_str (), cons.c_str (), tags.empty () ? "" : "   [",
+	IMPORT_PRINT ("  - %s: %s%s%s%s\n", n.name.c_str (), cons.c_str (), tags.empty () ? "" : "   [",
 		 tags.c_str (), tags.empty () ? "" : "]");
       }
 
-    fprintf (stdout, "  FK edges (child -> parent):\n");
+    IMPORT_PRINT ("  FK edges (child -> parent):\n");
     if (graph.fk_edges.empty ())
       {
-	fprintf (stdout, "      (none)\n");
+	IMPORT_PRINT ("      (none)\n");
       }
     for (const fk_edge &e : graph.fk_edges)
       {
-	fprintf (stdout, "      %s -> %s   (%s)\n", e.child.c_str (), e.parent.c_str (), e.name.c_str ());
+	IMPORT_PRINT ("      %s -> %s   (%s)\n", e.child.c_str (), e.parent.c_str (), e.name.c_str ());
       }
 
     if (!graph.inherit_edges.empty ())
       {
-	fprintf (stdout, "  inheritance (child -> super):\n");
+	IMPORT_PRINT ("  inheritance (child -> super):\n");
 	for (const inherit_edge &e : graph.inherit_edges)
 	  {
-	    fprintf (stdout, "      %s -> %s\n", e.child.c_str (), e.super.c_str ());
+	    IMPORT_PRINT ("      %s -> %s\n", e.child.c_str (), e.super.c_str ());
 	  }
       }
 
     if (graph.cycles.empty ())
       {
-	fprintf (stdout, "  cycles: none\n");
+	IMPORT_PRINT ("  cycles: none\n");
       }
     else
       {
 	for (const std::vector<std::string> &cy : graph.cycles)
 	  {
-	    fprintf (stdout, "  cycle: [%s]\n", join_list (cy).c_str ());
+	    IMPORT_PRINT ("  cycle: [%s]\n", join_list (cy).c_str ());
 	  }
       }
 
@@ -648,11 +649,11 @@ namespace cubimport
       {
 	placed += lv.size ();
       }
-    fprintf (stdout, "  level sets (parallel-eligible; complete=%s):\n",
+    IMPORT_PRINT ("  level sets (parallel-eligible; complete=%s):\n",
 	     (placed == graph.nodes.size ()) ? "true" : "false");
     for (size_t i = 0; i < graph.level_sets.size (); i++)
       {
-	fprintf (stdout, "      L%d: [%s]\n", (int) i, join_list (graph.level_sets[i]).c_str ());
+	IMPORT_PRINT ("      L%d: [%s]\n", (int) i, join_list (graph.level_sets[i]).c_str ());
       }
   }
 

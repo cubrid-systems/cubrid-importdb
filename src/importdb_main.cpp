@@ -27,6 +27,7 @@ static GETOPT_LONG oot_Import_Option[] = {
   {IMPORT_EXCEPTIONS_TABLE_L, 1, 0, IMPORT_EXCEPTIONS_TABLE_S},
   {IMPORT_RESTART_L, 0, 0, IMPORT_RESTART_S},
   {IMPORT_ALLOW_HA_L, 0, 0, IMPORT_ALLOW_HA_S},
+  {IMPORT_PROGRESS_L, 1, 0, IMPORT_PROGRESS_S},
   {0, 0, 0, 0}
 };
 
@@ -41,6 +42,7 @@ static UTIL_ARG_MAP oot_Import_Option_Map[] = {
   {IMPORT_EXCEPTIONS_TABLE_S, {ARG_STRING}, {0}},
   {IMPORT_RESTART_S, {ARG_BOOLEAN}, {0}},
   {IMPORT_ALLOW_HA_S, {ARG_BOOLEAN}, {0}},
+  {IMPORT_PROGRESS_S, {ARG_STRING}, {0}},
   {0, {0}, {0}}
 };
 
@@ -52,6 +54,15 @@ static UTIL_MAP oot_Import_Map[] = {
 int
 main (int argc, char **argv)
 {
+  /* Line-buffer stdout even when it is not a terminal. The phase summaries go to
+   * stdout and the diagnostics to stderr, and stderr is unbuffered: with the
+   * default block buffering, `cubrid-importdb ... > import.log 2>&1` flushes
+   * stdout only when its 4 KB buffer fills, so every error in the log appears
+   * ABOVE the phase it belongs to -- and the first thing an operator reads is a
+   * rejection with no context. Interactive runs already behaved correctly; this
+   * makes a redirected run read the same way. */
+  setvbuf (stdout, NULL, _IOLBF, 0);
+
   UTIL_FUNCTION_ARG arg;
   bool valid = (util_parse_argument (&oot_Import_Map[0], argc, argv) == NO_ERROR);
 

@@ -30,6 +30,7 @@
  */
 
 #include "import_plan.hpp"
+#include "import_progress.hpp"
 
 #include "utility.h"
 #include "message_catalog.h"
@@ -267,7 +268,7 @@ namespace cubimport
 	      {
 		std::string reason = "task #" + std::to_string (i) + " (" + task_label (tasks[i])
 				     + ") is emitted before its prerequisite #" + std::to_string (p);
-		PRINT_AND_LOG_ERR_MSG (msg (IMPORTDB_MSG_SCHEDULE_INVALID), sched.database_name.c_str (),
+		IMPORT_ERR (msg (IMPORTDB_MSG_SCHEDULE_INVALID), sched.database_name.c_str (),
 				       reason.c_str ());
 		return false;
 	      }
@@ -309,7 +310,7 @@ namespace cubimport
     if (order.size () != n)
       {
 	std::string reason = "the terminal task dependency graph has a cycle (topological order does not exist)";
-	PRINT_AND_LOG_ERR_MSG (msg (IMPORTDB_MSG_SCHEDULE_INVALID), sched.database_name.c_str (), reason.c_str ());
+	IMPORT_ERR (msg (IMPORTDB_MSG_SCHEDULE_INVALID), sched.database_name.c_str (), reason.c_str ());
 	return false;
       }
 
@@ -325,19 +326,19 @@ namespace cubimport
 	placed += lv.size ();
       }
 
-    fprintf (stdout, msg (IMPORTDB_MSG_SCHEDULE_SUMMARY), sched.database_name.c_str (),
+    IMPORT_PRINT (msg (IMPORTDB_MSG_SCHEDULE_SUMMARY), sched.database_name.c_str (),
 	     (int) sched.data_levels.size (), (int) sched.terminal_tasks.size ());
 
-    fprintf (stdout, "  data phase (parallel-eligible level sets):\n");
+    IMPORT_PRINT ("  data phase (parallel-eligible level sets):\n");
     for (std::size_t i = 0; i < sched.data_levels.size (); i++)
       {
-	fprintf (stdout, "      L%d: [%s]\n", (int) i, join_list (sched.data_levels[i]).c_str ());
+	IMPORT_PRINT ("      L%d: [%s]\n", (int) i, join_list (sched.data_levels[i]).c_str ());
       }
 
-    fprintf (stdout, "  terminal tasks (in a valid execution order):\n");
+    IMPORT_PRINT ("  terminal tasks (in a valid execution order):\n");
     if (sched.terminal_tasks.empty ())
       {
-	fprintf (stdout, "      (none)\n");
+	IMPORT_PRINT ("      (none)\n");
       }
     for (std::size_t i = 0; i < sched.terminal_tasks.size (); i++)
       {
@@ -351,7 +352,7 @@ namespace cubimport
 	      }
 	    deps += "#" + std::to_string (t.prereqs[k]);
 	  }
-	fprintf (stdout, "      #%-2d %-15s %s%s%s%s\n", (int) i, task_kind_name (t.kind), task_target (t).c_str (),
+	IMPORT_PRINT ("      #%-2d %-15s %s%s%s%s\n", (int) i, task_kind_name (t.kind), task_target (t).c_str (),
 		 deps.empty () ? "" : "   [after ", deps.c_str (), deps.empty () ? "" : "]");
       }
   }

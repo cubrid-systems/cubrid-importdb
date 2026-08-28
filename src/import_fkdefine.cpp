@@ -52,6 +52,7 @@
  */
 
 #include "import_fkdefine.hpp"
+#include "import_progress.hpp"
 #include "import_validate.hpp"	/* enumerate_fk_orphans / write_fk_exceptions */
 #include "import_resume.hpp"
 
@@ -362,7 +363,7 @@ namespace cubimport
 	const std::string full = path_join (iset.dump_dir, f);
 	if (read_file_text (full, text) != NO_ERROR)
 	  {
-	    PRINT_AND_LOG_ERR_MSG (msg (IMPORTDB_MSG_FKDEFINE_FILE_OPEN_FAILED), full.c_str (), strerror (errno));
+	    IMPORT_ERR (msg (IMPORTDB_MSG_FKDEFINE_FILE_OPEN_FAILED), full.c_str (), strerror (errno));
 	    hard_error = true;
 	    break;
 	  }
@@ -386,6 +387,8 @@ namespace cubimport
 	      {
 		continue;
 	      }
+	    cubimport::progress::set_counter ((int) processed.size () - 1, (int) fk_by_name.size (),
+					      edge->child + " -> " + edge->parent);
 
 	    /* Decide clean-vs-withheld: define only an edge with its parent PK
 	     * present (not Rebuild-withheld) that FK re-validation proved clean;
@@ -445,7 +448,7 @@ namespace cubimport
 
 		    /* four arguments, matching message 41 (the name appears twice in
 		     * the text but is one argument). */
-		    PRINT_AND_LOG_ERR_MSG (msg (IMPORTDB_MSG_VALIDATE_EDGE_VIOLATED), (int) n, edge->child.c_str (),
+		    IMPORT_ERR (msg (IMPORTDB_MSG_VALIDATE_EDGE_VIOLATED), (int) n, edge->child.c_str (),
 					   edge->parent.c_str (), edge->name.c_str ());
 
 		    withheld_define w;
@@ -467,7 +470,7 @@ namespace cubimport
 		  {
 		    /* Any other failure is a real error -- the FK could not be built
 		     * for a reason that is not the data. Abort the run. */
-		    PRINT_AND_LOG_ERR_MSG (msg (IMPORTDB_MSG_FKDEFINE_FAILED), edge->name.c_str (), edge->child.c_str (),
+		    IMPORT_ERR (msg (IMPORTDB_MSG_FKDEFINE_FAILED), edge->name.c_str (), edge->child.c_str (),
 					   edge->parent.c_str (), db_error_string (3));
 		    hard_error = true;
 		    break;
@@ -512,12 +515,12 @@ namespace cubimport
      * just the FK build that produced it now. */
     if (validate.violated_edges == 0)
       {
-	fprintf (stdout, msg (IMPORTDB_MSG_VALIDATE_COMPLETE), graph.database_name.c_str (),
+	IMPORT_PRINT (msg (IMPORTDB_MSG_VALIDATE_COMPLETE), graph.database_name.c_str (),
 		 validate.validated_edges, (int) rebuild.withheld.size ());
       }
     else
       {
-	fprintf (stdout, msg (IMPORTDB_MSG_VALIDATE_VIOLATIONS), graph.database_name.c_str (),
+	IMPORT_PRINT (msg (IMPORTDB_MSG_VALIDATE_VIOLATIONS), graph.database_name.c_str (),
 		 validate.violated_edges, (long) validate.total_orphans,
 		 path_join (iset.dump_dir, EXCEPTIONS_BASENAME).c_str ());
       }
@@ -540,7 +543,7 @@ namespace cubimport
 	    validate.exceptions_file = EXCEPTIONS_BASENAME;
 	    if (!write_fk_exceptions (path, iset, graph, validate, continue_on_error))
 	      {
-		PRINT_AND_LOG_ERR_MSG (msg (IMPORTDB_MSG_EXCEPTIONS_WRITE_FAILED), path.c_str (), strerror (errno));
+		IMPORT_ERR (msg (IMPORTDB_MSG_EXCEPTIONS_WRITE_FAILED), path.c_str (), strerror (errno));
 		summary = fkdefine_summary ();
 		return fkdefine_status::ERR_FKDEFINE;
 	      }
@@ -548,17 +551,17 @@ namespace cubimport
 
 	if (!write_withheld_exceptions (path, summary))
 	  {
-	    PRINT_AND_LOG_ERR_MSG (msg (IMPORTDB_MSG_EXCEPTIONS_WRITE_FAILED), path.c_str (), strerror (errno));
+	    IMPORT_ERR (msg (IMPORTDB_MSG_EXCEPTIONS_WRITE_FAILED), path.c_str (), strerror (errno));
 	    summary = fkdefine_summary ();
 	    return fkdefine_status::ERR_FKDEFINE;
 	  }
 
-	fprintf (stdout, msg (IMPORTDB_MSG_FKDEFINE_WITHHELD), (int) summary.defined.size (),
+	IMPORT_PRINT (msg (IMPORTDB_MSG_FKDEFINE_WITHHELD), (int) summary.defined.size (),
 		 (int) summary.withheld.size (), graph.database_name.c_str (), path.c_str ());
 	return fkdefine_status::PARTIAL;
       }
 
-    fprintf (stdout, msg (IMPORTDB_MSG_FKDEFINE_COMPLETE), (int) summary.defined.size (),
+    IMPORT_PRINT (msg (IMPORTDB_MSG_FKDEFINE_COMPLETE), (int) summary.defined.size (),
 	     graph.database_name.c_str ());
     return fkdefine_status::OK;
   }

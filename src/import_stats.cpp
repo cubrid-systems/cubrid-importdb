@@ -40,6 +40,7 @@
  */
 
 #include "import_stats.hpp"
+#include "import_progress.hpp"
 
 #include "db.h"
 #include "authenticate.h"
@@ -75,8 +76,10 @@ namespace cubimport
     int au_save = 0;
     AU_SAVE_AND_DISABLE (au_save);
 
+    int visited = 0;
     for (const graph_node &n : graph.nodes)
       {
+	cubimport::progress::set_counter (visited++, (int) graph.nodes.size (), n.name);
 	DB_OBJECT *classop = db_find_class (n.name.c_str ());
 	int error = (classop != NULL) ? sm_update_statistics (classop, STATS_WITH_SAMPLING) : ER_FAILED;
 	if (error != NO_ERROR)
@@ -85,7 +88,7 @@ namespace cubimport
 	     * sm_update_statistics has set the error; capture its text once. */
 	    const std::string reason = db_error_string (3);
 	    summary.failed.push_back ({ n.name, reason });
-	    PRINT_AND_LOG_ERR_MSG (msg (IMPORTDB_MSG_STATS_CLASS_FAILED), n.name.c_str (), reason.c_str ());
+	    IMPORT_ERR (msg (IMPORTDB_MSG_STATS_CLASS_FAILED), n.name.c_str (), reason.c_str ());
 	    continue;
 	  }
 	summary.updated++;
@@ -95,12 +98,12 @@ namespace cubimport
 
     if (!summary.failed.empty ())
       {
-	fprintf (stdout, msg (IMPORTDB_MSG_STATS_PARTIAL), summary.updated, (int) summary.failed.size (),
+	IMPORT_PRINT (msg (IMPORTDB_MSG_STATS_PARTIAL), summary.updated, (int) summary.failed.size (),
 		 iset.database_name.c_str ());
 	return stats_status::PARTIAL;
       }
 
-    fprintf (stdout, msg (IMPORTDB_MSG_STATS_COMPLETE), summary.updated, iset.database_name.c_str ());
+    IMPORT_PRINT (msg (IMPORTDB_MSG_STATS_COMPLETE), summary.updated, iset.database_name.c_str ());
     return stats_status::OK;
   }
 
