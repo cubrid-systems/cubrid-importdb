@@ -491,20 +491,6 @@ paired imports at two degrees — budget half an hour for it, or run
 - [`docs/out-of-tree.md`](docs/out-of-tree.md) — how the build works against an
   engine it does not live in, and the libstdc++ ABI question.
 
-### Identity
-
-[`assets/`](assets/) holds `banner.svg` (the header at the top), `lifecycle.svg`
-(the figure in [The problem](#the-problem)), and `mark.svg` — the mark on its own,
-for a favicon, an avatar, or anywhere the banner is too wide. All three are
-theme-aware.
-
-<img src="assets/mark.svg" alt="CUBRID ImportDB mark" width="52" height="52">
-
-## Provenance
-
-CUBRID ImportDB began as `cubrid importdb` inside the CUBRID engine tree. It
-changes no engine code and adds nothing to the server: it builds against the
-engine's source and configured build tree, links exactly one engine library
-(`libcubridcs`), and drives the existing `loaddb` loader for the data phase.
+## License
 
 Apache License 2.0, following CUBRID. See [LICENSE](LICENSE).
