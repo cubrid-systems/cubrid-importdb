@@ -41,7 +41,16 @@ while [ $# -gt 0 ]; do
   shift
 done
 export IT_KEEP
-[ -n "${IMPORTDB_BIN:-}" ] && export IMPORTDB_BIN
+# Absolutize before exporting: every case cd's into its own scratch directory, so
+# a relative --bin (the form this script's own usage documents) would resolve
+# against the wrong directory and fail with 127.
+if [ -n "${IMPORTDB_BIN:-}" ]; then
+  case "$IMPORTDB_BIN" in
+    /*) ;;
+    */*) IMPORTDB_BIN=$(cd "$(dirname "$IMPORTDB_BIN")" && pwd)/$(basename "$IMPORTDB_BIN") ;;
+  esac
+  export IMPORTDB_BIN
+fi
 
 if [ "${#selected[@]}" -eq 0 ]; then
   read -r -a cases <<< "$IT_ALL_CASES"

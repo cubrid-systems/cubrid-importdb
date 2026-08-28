@@ -161,6 +161,30 @@ if (BUILD_UTILITY)
   cubrid_apply_cxx_abi (cubrid-importdb)
   target_link_libraries (cubrid-importdb PRIVATE "${CUBRID_CS_FROM_BUILD}")
   message (STATUS "cubrid-importdb links ${CUBRID_CS_FROM_BUILD}")
+
+  # libcubridcs pulls in libcascci, which CUBRID installs under $CUBRID/cci/lib --
+  # a directory nothing puts on the loader path. DT_RUNPATH is not transitive, and
+  # the published libcubridcs.so carries a baked-in RPATH of the vendor build host
+  # (/home/CUBRID/lib), so its own dependency cannot resolve through ours. Naming
+  # both directories is what lets the built binary run with only $CUBRID set,
+  # instead of every caller having to know about LD_LIBRARY_PATH.
+  get_filename_component (CUBRID_CS_LIBDIR "${CUBRID_CS_FROM_BUILD}" DIRECTORY)
+  set (CUBRID_RUNTIME_RPATH "${CUBRID_CS_LIBDIR}")
+  if (DEFINED ENV{CUBRID})
+    list (APPEND CUBRID_RUNTIME_RPATH "$ENV{CUBRID}/lib" "$ENV{CUBRID}/cci/lib")
+  endif ()
+  list (REMOVE_DUPLICATES CUBRID_RUNTIME_RPATH)
+  set_target_properties (cubrid-importdb PROPERTIES
+    BUILD_RPATH "${CUBRID_RUNTIME_RPATH}"
+    INSTALL_RPATH "${CUBRID_RUNTIME_RPATH}")
+  # ... as DT_RPATH, not DT_RUNPATH. The distinction is the whole point here:
+  # DT_RUNPATH applies only to the object that declares it, so ours would be
+  # consulted for libcubridcs and then ignored while the loader resolved
+  # libcubridcs's OWN need for libcascci -- falling back to that library's
+  # baked-in /home/CUBRID/lib and failing. DT_RPATH is inherited down the
+  # dependency chain, which is what makes the binary runnable with $CUBRID alone.
+  # (It is the same reason CUBRID's own cub_admin ships a DT_RPATH.)
+  target_link_options (cubrid-importdb PRIVATE "-Wl,--disable-new-dtags")
   install (TARGETS cubrid-importdb RUNTIME DESTINATION bin)
 endif ()
 
