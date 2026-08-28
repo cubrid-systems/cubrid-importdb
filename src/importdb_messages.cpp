@@ -53,7 +53,7 @@ namespace
     { 38, "importdb: cannot open rebuild source '%1$s': %2$s.\n" },
     { 39, "importdb: rebuilt %1$d constraint(s) and built %2$d index(es) on '%3$s'; PK/UNIQUE and plain indexes are restored (FK definition is a later phase).\n" },
     { 40, "importdb: rebuilt %1$d constraint(s), %2$d failed on '%3$s'; %4$d dependent FK(s) withheld from the FK phase. See the manifest [rebuild] section; importdb exits non-zero.\n" },
-    { 41, "importdb: the engine rejected FOREIGN KEY [%4$s] and found %1$d orphan row(s) on '%2$s' -> '%3$s' [%4$s]; that FK is withheld and its offenders enumerated.\n" },
+    { 41, "importdb: the engine rejected the FOREIGN KEY and found %1$d orphan row(s) on '%2$s' -> '%3$s' [%4$s]; that FK is withheld and its offenders enumerated.\n" },
     { 42, "importdb: every FOREIGN KEY on '%1$s' was accepted by the engine -- %2$d edge(s) clean, %3$d skipped (parent key withheld). The engine validates the rows while it builds each FK.\n" },
     { 43, "importdb: '%1$s' has referential violations -- %2$d FOREIGN KEY(s) rejected by the engine, %3$ld orphan row(s) total; offenders written to %4$s. See the manifest [validate] section; importdb exits non-zero.\n" },
     { 44, "importdb: enumerating the orphan rows of '%1$s' -> '%2$s' [%3$s] failed: %4$s\n" },

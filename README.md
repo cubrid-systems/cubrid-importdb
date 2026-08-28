@@ -1,172 +1,302 @@
 # cubrid-importdb
 
-`cubrid importdb` as an out-of-tree utility, distributed as **source** and
-recompiled against the engine it will run with.
-
-Status: **builds and imports**, including against the official nightly daily
-build. `tools/smoke.sh` runs a real two-table import (PK, FK, plain index, 450
-rows) and checks the catalog round-trip; verified against
-`11.5.0.2494-4b6ae5c`.
-
-## What is distributed, and what that costs
-
-**Source, not binaries.** The utility is recompiled against the engine it will
-run with, so there is no ABI to keep stable — only an API. That single decision
-is why the split is nearly free: **the 16 importdb sources move byte-identical,
-with no edits at all.**
-
-What this repo owns instead:
-
-| file | lines | what it is |
-|---|---|---|
-| `include/importdb_utility_ext.h` | ~120 | importdb's own declarations — the utility name, the message-set number, its 70 message ids, its 19 CLI option constants. They sit in the engine's `src/executables/utility.h` today only because importdb put them there |
-| `src/importdb_messages.cpp` | 111 | the 70 message strings, generated from `msg/en_US.utf8/utils.msg` set 61. In-tree they are compiled into `$CUBRID/msg/*/utils.cat`, which a separate repo cannot write |
-| `src/importdb_main.cpp` | ~60 | the entry point, plus the two option tables that live in the engine's `util_admin.c` today |
-| `cmake/EngineFlags.cmake` | 55 | the engine's 39 include dirs and 13 defines, generated from its own compile line |
-
-And one build define does the work that would otherwise mean editing 16 files:
+**Reload a whole CUBRID database from an `unloaddb` dump with one command — faster
+than the hand-scripted way, and without silently leaving a broken foreign key
+behind.**
 
 ```
--Dmsgcat_message=importdb_msgcat_message
+cubrid-importdb -u dba mydb /path/to/dump
 ```
 
-Applied before any header, it renames the declaration in `message_catalog.h` **and
-every call site** together. That is the whole trick.
+That is the entire operator interface for a full-database reload: point it at the
+directory `unloaddb` wrote, and it works out the rest.
 
-The build also compiles the engine's own `src/executables/util_support.c` (389
-lines) because `util_parse_argument` is not in `libcubridcs` — borrowed, not
-copied, which is a thing only a source distribution can do.
+---
 
-**And the engine gets smaller.** `utility.h`, `util_admin.c`, `msg/*/utils.msg`
-and `cs/CMakeLists.txt` all go back to stock: importdb stops modifying the engine
-at all. Verified by compiling the 16 sources against the pre-importdb `utility.h`
-— 16/16, zero edits. Until that engine-side change lands, the build detects that
-the engine still declares importdb and this repo's declarations stand down, so it
-works against a split and an unsplit engine both.
+## The problem
 
-## Build modes
-
-| mode | needs | builds |
-|---|---|---|
-| `-DCUBRID_SOURCE_DIR=<engine src> -DCUBRID_BUILD_DIR=<configured engine build>` | an engine **source** tree | `cubrid-importdb`, the real thing |
-| `-DBUILD_UTILITY=OFF` | only `$CUBRID` (an **install**) | `contract_check`, the cheap behaviour probe |
+`unloaddb` hands you a directory. Reloading it is on you:
 
 ```sh
-export CUBRID=/path/to/install
-cmake -S . -B build -DCUBRID_SOURCE_DIR=/path/to/cubrid -DCUBRID_BUILD_DIR=/path/to/cubrid/build
-cmake --build build -j
-CUBRID=$CUBRID bash tools/smoke.sh build/cubrid-importdb     # a real import
-CONTRACT_CHECK_BIN=$PWD/build/contract_check bash contract/run.sh
+cubrid loaddb -S -u dba -s mydb_schema   mydb    # schema first, so every
+cubrid loaddb -C -u dba -d mydb_objects  mydb    # PK/UNIQUE/FK is live and
+cubrid loaddb -S -u dba -i mydb_indexes  mydb    # maintained per row
 ```
 
-## The 8 calls the installed headers do not declare
+Three invocations for a small database, and the ordering is yours to get right.
+That costs two things:
 
-Relevant only to the `contract_check` half, which builds against an install. The
-utility itself sees the engine's own headers, so it needs none of these
-substitutes — but they are what the contract check asserts still work, because
-they are the assumptions the code rests on:
+**Speed.** `unloaddb` writes primary keys, unique constraints **and foreign keys**
+into `<prefix>_schema`, so schema-first means every constraint is live for the
+entire data phase and maintained one row at a time. Only the plain secondary
+indexes are deferred to `_indexes`.
 
-| was | now |
+**Correctness, and this is the one that matters.** `loaddb` turns foreign-key
+checking *off* for the data phase and never turns it back on to re-check. Load a
+dump containing an orphan row and it succeeds, reports nothing, and leaves you a
+database where the FOREIGN KEY is present in the catalog **and violated by the
+data** — a state the engine itself would refuse to create. You find out later,
+from a wrong query answer.
+
+`cubrid-importdb` replaces that with a single command that plans the load from the
+dependency graph, loads into bare heaps and bulk-builds the constraints
+afterwards, and refuses to define a foreign key the data does not satisfy —
+telling you exactly which rows are at fault.
+
+## Features
+
+| | |
 |---|---|
-| `sm_update_statistics` | SQL `UPDATE STATISTICS ON <cls> [WITH FULLSCAN]` / `ON ALL CLASSES` |
-| `prm_get_integer_value` | `db_get_system_parameters ()` (installed) |
-| `HA_DISABLED ()` macro | the same function, asking the server for `ha_mode` |
-| `au_is_dba_group_member (Au_user)` | read `db_user.groups` as a SET and iterate it |
-| `AU_SAVE_AND_DISABLE` / `AU_RESTORE` | nothing — a DBA or DBA-group member does every one of these operations with authorization *enabled*, and dropping the window means the engine enforces it instead of one connect-time check |
-| `msgcat_message` / `envvar_bindir_file` / `util_log_write_errid` | this repo's own message table, `$CUBRID/bin` path composition, own logging |
-| the `loaddb -C` subprocess pool | `fork` + `PR_SET_PDEATHSIG` + `exec $CUBRID/bin/cub_admin loaddb -C` |
+| **One command for the whole dump** | Discovers the schema, object and index files, and the layout they were written in — default single-file or `--datafile-per-class`. No ordering for you to get right. |
+| **Dependency-aware planning** | Reads the catalog after defining the schema and builds a graph from FK, inheritance, partitioning and serials, then loads in level order. Cycles are handled: FK definition is deferred, so mutually-referencing tables load in one pass. |
+| **Heap-only load** | Strips PK/UNIQUE/FK, loads into bare heaps, then bulk-builds the constraints on the populated tables. No per-row index maintenance during the data phase. |
+| **Referential integrity is enforced, not assumed** | Every foreign key is defined against the loaded data. If the data violates one, the engine rejects it, and importdb enumerates *every* offending row (the engine names only the first) and withholds that FK rather than defining a broken one. |
+| **A repair record you can act on** | `importdb.exceptions` lists each orphan by primary key, and carries the exact DDL to add the withheld FK once the data is fixed. |
+| **Inter-table parallelism** | `--degree=N` loads independent tables concurrently. |
+| **Resume** | A killed import re-run with the same command continues from its manifest instead of starting over. |
+| **Honest about HA** | Refuses an `ha_mode=on` target by default, because the bare-heap load does not replicate to the standby. `--allow-ha` overrides, loudly, twice. |
+| **`--dry-run`** | Prints the plan and the terminal task order; changes nothing. |
 
-The measurement behind that table is in the vault:
-`plan/importdb/NOTES_out_of_tree_feasibility.md`.
+## Requirements
 
-## Build
+- **CUBRID 11.5 or newer.** 11.4 and earlier are not supported: importdb reads
+  the `_db_serial` system class to find AUTO_INCREMENT serials (the `db_serial`
+  view omits them), and that read is rejected on 11.4. The contract check
+  (below) reports this rather than letting it fail later and less clearly.
+- Linux, a C++17 compiler, CMake 3.16+.
+- A CUBRID **source tree** and a configured **build tree** to compile against, plus
+  an **installed** CUBRID to link and run against. See [Install](#install).
+
+## Install
+
+This is a source distribution: you build it against the CUBRID it will run with.
+There is no binary release, and that is deliberate — see
+[docs/out-of-tree.md](docs/out-of-tree.md).
+
+The quickest path is the nightly drop, which publishes the source and the install
+as a matched pair from the same build:
 
 ```sh
-export CUBRID=/path/to/cubrid            # an install, not a source tree
-cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo
-cmake --build build -j
-CONTRACT_CHECK_BIN=$PWD/build/contract_check bash contract/run.sh
+git clone https://github.com/cubrid-systems/cubrid-importdb
+cd cubrid-importdb
+
+# fetch a CUBRID source tree + install from ftp.cubrid.org (same build, no skew)
+tools/fetch_engine.sh --nightly 11.5 engine
+
+# the utility's translation units need the engine's generated and 3rdparty
+# headers, which come from a CONFIGURED build tree -- not from a built engine
+cmake -S engine/src -B engine/build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+cmake --build engine/build --target rapidjson re2 lz4 libexpat libjansson
+
+export CUBRID="$PWD/engine/install"
+cmake -S . -B build -DCUBRID_SOURCE_DIR="$PWD/engine/src" -DCUBRID_BUILD_DIR="$PWD/engine/build"
+cmake --build build -j"$(nproc)"
+
+build/cubrid-importdb            # prints the usage
 ```
 
-`FindCUBRID.cmake` fails the configure step with a named header if the install is
-missing one, rather than letting it become a compile error.
+Configuring the engine and building only its header producers takes about 20
+seconds. The engine itself is never built.
 
-## The contract with upstream
+Against a CUBRID you already have, point `CUBRID_SOURCE_DIR` and `CUBRID_BUILD_DIR`
+at your own trees and `$CUBRID` at the install.
 
-The whole dependency on CUBRID is enumerated in
-[`contract/surface_manifest.txt`](contract/surface_manifest.txt) and checked two
-ways — statically (no build, no server) and at runtime against a live database.
-See [`contract/README.md`](contract/README.md). CI runs both, and runs a
-**negative control** that must fail, so a green tick means the suite still
-discriminates.
+> The build reads the engine library's libstdc++ ABI with `nm` and matches it.
+> Published CUBRID binaries use the pre-C++11 `std::string` ABI; a modern compiler
+> does not. You should never have to think about this, but if a link ever fails on
+> `cubload::` symbols, `-DFORCE_OLD_CXX_ABI=ON` is the override.
 
-## Linking a released or nightly engine — the libstdc++ ABI
-
-The published CUBRID binaries are built with the **pre-C++11 `std::string` ABI**.
-A modern GCC defaults to the `__cxx11` one, so every engine C++ interface that
-passes a `std::string` fails to link — concretely the `cubload::` entry points
-`import_load.cpp`'s serial path uses:
+## Usage
 
 ```
-undefined reference to `loaddb_install_class(cubload::batch const&, bool&, std::__cxx11::basic_string<...>&)'
+usage: cubrid-importdb [OPTION] database-name dump-dir
+
+    -u, --user=ID               import user; must belong to the DBA group
+    -p, --password=PASS         password of the import user
+    --degree=N                  inter-table parallel degree
+    --continue                  attempt every FK edge instead of stopping at the first rejected one
+    --skip-object-classes       skip and report object-valued classes instead of rejecting them
+    --dry-run                   print the import plan and terminal tasks; change nothing
+    --restart                   ignore an interrupted run's manifest and import from scratch
+    --allow-ha                  import into an ha_mode=on target anyway; the standby will NOT
+                                receive the rows and must be rebuilt from a backup
 ```
 
-The library exports `_Z20loaddb_install_classRKN7cubload5batchERbRSs` — `RSs`,
-the old ABI. The build **detects this from the library** with `nm` and matches it
-(`-D_GLIBCXX_USE_CXX11_ABI=0`); `-DFORCE_OLD_CXX_ABI=ON` overrides if detection
-cannot read the symbols. Verified in both directions: pre-C++11 against a nightly
-install, `__cxx11` against a locally built engine.
+The target database must exist, be **running**, and be **empty** of user classes.
+The dump directory must be **writable** — importdb writes `importdb.manifest`
+(the resume point) and, on a violation, `importdb.exceptions` into it.
 
-**This no longer applies to `cubrid-importdb` itself.** The in-process serial load
-path — the only code that called across a `std::string` boundary — was removed:
-the data phase now spawns `cub_admin loaddb -C` at every degree, serial being
-degree 1. What is left is the `extern "C"` `db_*` API, where no such coupling
-exists. Verified: `-DCXX_ABI_MATCH=OFF` builds with the compiler's own ABI while
-linking the nightly's pre-C++11-ABI library, zero undefined references, and the
-smoke test passes. That option exists to keep the claim testable — if a future
-change reintroduces a call across a `std::string` boundary, that build fails.
+**Exit status**: `0` complete · `1` partial (loaded and committed, but at least
+one FK withheld — read `importdb.exceptions`) · non-zero otherwise.
 
-Detection is kept anyway, because `contract_check` links the same library and
-because a future engine could expose something new. It costs one `nm` call.
+```sh
+# the common case
+cubrid-importdb -u dba mydb /dumps/mydb
 
-What the removal cost: a process per object file instead of an in-process
-session. The server-side work is identical — the child runs the same loaddb load
-path the code used to drive — so the difference is process startup and one extra
-connection per file, not throughput.
+# see the plan without touching anything
+cubrid-importdb -u dba --dry-run mydb /dumps/mydb
 
-## What can break, and what catches it
+# parallel: needs a --datafile-per-class dump to have anything to fan out over
+cubrid unloaddb -S -u dba --datafile-per-class mydb
+cubrid-importdb -u dba --degree=4 mydb /dumps/mydb
 
-| breakage | caught by |
+# a dump you suspect: report every violated edge instead of stopping at the first
+cubrid-importdb -u dba --continue mydb /dumps/mydb
+
+# resume after a kill -- the same command, nothing new to type
+cubrid-importdb -u dba mydb /dumps/mydb
+```
+
+## How it works
+
+Ten phases, each announcing what it did. A real run:
+
+```
+importdb: rostered default dump (prefix 'shopsrc') from /dumps/shop
+    schema:   shopsrc_schema (single)
+    objects:  single (shopsrc_objects)
+    indexes:  shopsrc_indexes
+importdb: defined 'shop'; the target database is now fully defined and empty.
+importdb: dependency graph for 'shop' -- 3 node(s), 2 FK edge(s), 0 inheritance edge(s), 1 serial(s)
+  FK edges (child -> parent):
+      customer -> region   (fk_cust_region)
+      orders -> customer   (fk_ord_cust)
+  cycles: none
+  level sets (parallel-eligible; complete=true):
+      L0: [region]     L1: [customer]     L2: [orders]
+importdb: schedule for 'shop' -- data phase 3 level(s), 11 terminal task(s)
+      #0  REBUILD_PK      customer (pk_customer_id)
+      ...
+      #6  FK_DEFINE       customer -> region (fk_cust_region)   [after #2, #4]
+      #8  STATS           customer   [after #0, #3, #5]
+importdb: stripped 7 constraint(s) from 'shop'; the target now holds bare heaps ready for the data phase.
+importdb: loaded 9 row(s) from 1 object file(s) into 'shop'; the target now holds data in bare heaps.
+importdb: rebuilt 5 constraint(s) and built 1 index(es) on 'shop'.
+importdb: every FOREIGN KEY on 'shop' was accepted by the engine -- 2 edge(s) clean, 0 skipped.
+importdb: defined 2 FK(s) on 'shop'; the catalog now matches the dump snapshot (full round-trip complete).
+```
+
+**Discover → Define → Graph → Plan → Strip → Load → Rebuild → FK define → Stats →
+Triggers.** The shape that matters is the middle: the schema is defined, its
+constraint set is snapshotted and then *stripped*, the data goes into bare heaps,
+and the constraints are bulk-built afterwards. Triggers are defined strictly last,
+so nothing fires during the load.
+
+Foreign keys are defined against the loaded data, which is where the engine
+validates them — `ADD CONSTRAINT ... FOREIGN KEY` builds the FK's b-tree over the
+existing rows and checks each key against the parent as it goes. importdb does not
+duplicate that work; it only takes over where the engine stops.
+
+## Referential integrity
+
+This is the difference worth showing. Take a dump with two orphan `orders` rows
+whose `customer_id` does not exist.
+
+**The hand-scripted `loaddb` path** accepts it, exit 0, nothing reported:
+
+```
+$ csql -u dba -C -c "SELECT count(*) FROM db_index WHERE index_name='fk_ord_cust'" shop
+1                                    <- the FOREIGN KEY is in the catalog
+$ csql -u dba -C -c "SELECT count(*) FROM orders o
+      WHERE NOT EXISTS (SELECT 1 FROM customer c WHERE c.id = o.customer_id)" shop
+2                                    <- and two rows violate it
+```
+
+Ask the engine to create that same FK over that data and it refuses. `loaddb` left
+a state the engine would not have allowed.
+
+**importdb** on the same dump exits 1, loads the data, defines the clean FKs, and
+withholds the violated one:
+
+```
+importdb: the engine rejected the FOREIGN KEY and found 2 orphan row(s) on
+          'orders' -> 'customer' [fk_ord_cust]; that FK is withheld and its
+          offenders enumerated.
+importdb: 'shop' has referential violations -- 1 FOREIGN KEY(s) rejected by the
+          engine, 2 orphan row(s) total; offenders written to importdb.exceptions.
+```
+
+```
+# importdb.exceptions
+[edge] orders -> customer (fk_ord_cust)
+orphan: child[id=900001] fk[customer_id=777]
+orphan: child[id=900002] fk[customer_id=888]
+
+# CUBRID importdb FK define: the following FK(s) were NOT defined (withheld).
+[fk-withheld] orders -> customer (fk_ord_cust) :: ADD FOREIGN KEY rejected by the engine: 2 orphan row(s)
+readd: ALTER TABLE [orders] ADD CONSTRAINT [fk_ord_cust] FOREIGN KEY (customer_id) REFERENCES [customer] (id);
+```
+
+The engine names only the first offending value and stops; importdb enumerates all
+of them. Fix the data, run the `readd:` statement, and the constraint set matches
+the dump. `--continue` attempts every edge instead of stopping at the first.
+
+Run [`demo/run_demo.sh`](demo/README.md) to watch both paths side by side.
+
+## Performance
+
+Measured against a **parallelism-matched** `loaddb` baseline — the baseline runs
+its per-class loads concurrently at the same degree, so the comparison isolates
+the constraint lifecycle instead of crediting it with the fan-out.
+
+| degree | importdb vs loaddb | what it measures |
+|---|---|---|
+| **1** | **1.8 – 2.1×** faster | the constraint lifecycle alone |
+| **4** | **2.5 – 2.9×** faster | lifecycle plus inter-table parallelism |
+
+393,000 rows over 5 object files, paired runs with alternating arm order, median
+of per-pair ratios, four independent runs. A single-host trend, not a certified
+benchmark — reproduce it with `tests/run_tests.sh perf`.
+
+Two honest caveats:
+
+- **Small dumps do not benefit.** At ~15,000 rows importdb is *slower* — its fixed
+  setup (catalog snapshot, strip, rebuild) dominates. The crossover on this
+  hardware is around a hundred thousand rows.
+- **`--degree` needs a `--datafile-per-class` dump.** The fan-out is over object
+  files, so a default single-file dump clamps to serial no matter what you pass.
+
+## What it does not do
+
+- **It does not replace `loaddb`.** Single-file, single-table loads are what
+  `loaddb` is for, and it is untouched.
+- **It does not read foreign dumps.** CUBRID `unloaddb` output only.
+- **It is not an online load.** The target must be empty of user classes; this is
+  a reload, not an ingest.
+- **It does not carry object-valued (OID) columns.** CS-mode loading handles
+  value-typed data; classes with object columns are rejected, or skipped and
+  reported with `--skip-object-classes`.
+- **It does not replicate to an HA standby.** The bare-heap load produces no row
+  replication, so an `ha_mode=on` target is refused unless you pass `--allow-ha`
+  and rebuild the standby from a backup afterwards.
+
+## Development
+
+```sh
+cmake --build build -j                       # build
+tests/run_tests.sh                           # the functional suite
+tests/run_tests.sh -k resume fkviolation     # one or more cases, keep the scratch dir
+ctest --test-dir build --output-on-failure   # contract + smoke + functional
+bash demo/run_demo.sh build/cubrid-importdb  # the demo, four scenarios
+```
+
+| | |
 |---|---|
-| a header it includes is removed or renamed | compile |
-| a function it calls is removed or renamed | compile |
-| a signature changes with no compatible default | compile |
-| a type it uses changes shape | compile |
-| `utility.h`'s option/arg machinery changes | compile |
-| `util_support.c` moves | build |
-| authorization tightened on a catalog class, an SQL form withdrawn, the `cub_admin` argv contract changed | **only** the smoke test / `contract_check` |
+| [`tests/`](tests/README.md) | 9 cases, 202 assertions: round-trip fidelity, dependency ordering, FK cycles, FK violations, `--dry-run`, `--degree`, resume after `SIGKILL`, refusals, and the performance comparison |
+| [`demo/`](demo/README.md) | 4 scenarios, 34 assertions — the `loaddb` contrast, the plan, the FK violation, and what parallelism actually depends on |
+| [`contract/`](contract/README.md) | What this repo depends on from CUBRID, enumerated and machine-checked: 41 static checks against an install, 16 runtime checks against a live database, plus a negative control that must fail |
+| [`docs/out-of-tree.md`](docs/out-of-tree.md) | How the build works against an engine it does not live in, and the libstdc++ ABI question |
 
-So the guard is the build plus one real import — not an ABI check. CI is split on
-exactly that line: compile on every engine PR (~2 min, no engine build, the
-configured build tree is cached for its generated headers), link + import
-nightly. See [`contract/README.md`](contract/README.md) and the two workflows.
+CI runs the contract against a nightly engine, builds and imports against that
+same build, and — from the engine side — compiles this repo on every upstream PR
+that touches a path it depends on. See [`.github/workflows/`](.github/workflows/).
 
-A signature change *with* a compatible default is benign here — which is a point
-in favour of source distribution, and was verified the hard way: building against
-the merge-base tree with a newer library produced exactly the failure a binary
-distribution would suffer (`sm_update_statistics(db_object*, bool)` unresolved
-against a library exporting the three-argument form), and it disappears when
-source and library come from the same commit.
+## Provenance
 
-## Porting — what is left
+`cubrid-importdb` began as `cubrid importdb` inside the CUBRID engine tree, under
+the CUBRID Systems Research roadmap project **N54**. It uses no private engine
+API beyond the client headers CUBRID installs, changes no engine code, and drives
+the existing `loaddb` loader for the data phase — the whole utility is
+orchestration over primitives CUBRID already had.
 
-The 16 sources need nothing. What remains:
-
-- **the serial data path.** `import_load.cpp` drives loaddb in process via
-  `loaddb_init` / `loaddb_load_batch`. In the source model that is *fine* — the
-  headers are right there — so this is no longer a blocker, but it does mean the
-  utility keeps reaching into `src/loaddb`, which the CI path filter reflects.
-- **the CLI surface.** `cubrid importdb …` becomes `cubrid-importdb …` unless the
-  engine keeps its one row in the utility map. Worth a decision, not work.
-- **the engine-side removal PR**, which is what makes the split real rather than
-  additive.
+Apache License 2.0, following CUBRID.
