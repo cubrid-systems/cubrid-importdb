@@ -1,0 +1,112 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 190" width="900" height="190"
+     role="img" aria-label="cubrid-importdb: one command to reload a whole CUBRID database from an unloaddb dump">
+  <title>cubrid-importdb</title>
+  <style>
+    /* Light is the base palette, so a renderer that ignores @media still gets a
+       correct picture rather than an invalid one. No CSS custom properties for
+       the same reason. */
+    .bg        { fill: #f6f8fa; stroke: #d0d7de; stroke-width: 1; }
+    .ink       { fill: #1f2328; }
+    .muted     { fill: #57606a; }
+    .faint     { fill: #8c959f; }
+    .brand     { fill: #2563eb; }
+    .good      { fill: #1a7f37; }
+    .plate     { fill: #f6f8fa; }
+    .mark-line { fill: none; stroke: #2563eb; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
+    .mark-bar  { fill: #2563eb; }
+    .rule-line { stroke: #d0d7de; stroke-width: 1; }
+    .arrow     { fill: none; stroke: #8c959f; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+    .pill      { fill: none; stroke: #d0d7de; stroke-width: 1.4; }
+    .pill-on   { fill: none; stroke: #1a7f37; stroke-width: 1.6; }
+    .row       { fill: #c6cdd5; }
+    .row-on    { fill: #2563eb; }
+    .check     { fill: none; stroke: #1a7f37; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+
+    @media (prefers-color-scheme: dark) {
+      .bg        { fill: #161b22; stroke: #30363d; }
+      .ink       { fill: #e6edf3; }
+      .muted     { fill: #9198a1; }
+      .faint     { fill: #6e7681; }
+      .brand     { fill: #539bf5; }
+      .good      { fill: #3fb950; }
+      .plate     { fill: #161b22; }
+      .mark-line { stroke: #539bf5; }
+      .mark-bar  { fill: #539bf5; }
+      .rule-line { stroke: #30363d; }
+      .arrow     { stroke: #6e7681; }
+      .pill      { stroke: #30363d; }
+      .pill-on   { stroke: #3fb950; }
+      .row       { fill: #3d444d; }
+      .row-on    { fill: #539bf5; }
+      .check     { stroke: #3fb950; }
+    }
+
+    .wordmark { font-family: ui-monospace, "SFMono-Regular", "JetBrains Mono", Menlo, Consolas, monospace;
+                font-size: 37px; font-weight: 700; letter-spacing: -0.5px; }
+    .tag      { font-family: ui-sans-serif, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+                font-size: 15.5px; }
+    .mono-in  { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; font-size: 14.5px; }
+    .steplab  { font-family: ui-sans-serif, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+                font-size: 10.5px; font-weight: 600; letter-spacing: 0.8px; }
+  </style>
+
+  <rect class="bg" x="0.5" y="0.5" width="899" height="189" rx="10"/>
+
+  <!-- mark: rows falling into a heap -->
+  <g transform="translate(40,58) scale(1.3)">
+    <path class="mark-line"
+          d="M17,10 H14 A6,6 0 0 0 8,16 V40 A6,6 0 0 0 14,46 H38 A6,6 0 0 0 44,40 V16 A6,6 0 0 0 38,10 H27"/>
+    <path class="mark-line" d="M22,0 V14"/>
+    <path class="mark-line" d="M16,10 L22,17 L28,10"/>
+    <rect class="mark-bar" x="14" y="27" width="24" height="4.2" rx="2.1"/>
+    <rect class="mark-bar" x="14" y="34" width="19" height="4.2" rx="2.1" opacity="0.7"/>
+    <rect class="mark-bar" x="14" y="41" width="13" height="4.2" rx="2.1" opacity="0.45"/>
+  </g>
+
+  <!-- wordmark -->
+  <text class="wordmark" x="124" y="80">
+    <tspan class="muted">cubrid-</tspan><tspan class="brand">importdb</tspan>
+  </text>
+
+  <!-- tagline -->
+  <text class="tag muted" x="126" y="114">Reload a whole database from an <tspan class="mono-in ink">unloaddb</tspan> dump in one</text>
+  <text class="tag muted" x="126" y="138">command &#8212; and never leave a foreign key the data breaks.</text>
+
+  <line class="rule-line" x1="614" y1="36" x2="614" y2="154"/>
+
+  <!-- the constraint lifecycle, in miniature -->
+  <g transform="translate(646,62)">
+    <!-- 1: stripped, bare heaps, no constraints -->
+    <g>
+      <rect class="pill" x="0" y="0" width="56" height="40" rx="7" stroke-dasharray="4 3"/>
+      <rect class="row" x="10" y="11" width="36" height="4" rx="2"/>
+      <rect class="row" x="10" y="19" width="28" height="4" rx="2"/>
+      <rect class="row" x="10" y="27" width="32" height="4" rx="2"/>
+      <text class="steplab faint" x="28" y="58" text-anchor="middle">STRIP</text>
+    </g>
+    <path class="arrow" d="M64,20 H82 M77,16 L82,20 L77,24"/>
+
+    <!-- 2: loading, rows landing in the bare heaps -->
+    <g transform="translate(90,0)">
+      <rect class="pill" x="0" y="0" width="56" height="40" rx="7"/>
+      <rect class="row-on" x="10" y="11" width="36" height="4" rx="2"/>
+      <rect class="row-on" x="10" y="19" width="28" height="4" rx="2"/>
+      <rect class="row" x="10" y="27" width="32" height="4" rx="2"/>
+      <text class="steplab faint" x="28" y="58" text-anchor="middle">LOAD</text>
+    </g>
+    <path class="arrow" d="M154,20 H172 M167,16 L172,20 L167,24"/>
+
+    <!-- 3: constraints back on, and the engine verified them -->
+    <g transform="translate(180,0)">
+      <rect class="pill-on" x="0" y="0" width="56" height="40" rx="7"/>
+      <rect class="row-on" x="10" y="11" width="36" height="4" rx="2"/>
+      <rect class="row-on" x="10" y="19" width="28" height="4" rx="2"/>
+      <rect class="row-on" x="10" y="27" width="32" height="4" rx="2"/>
+      <g transform="translate(44,-9)">
+        <circle class="plate" cx="9" cy="9" r="9.5"/>
+        <path class="check" d="M4.6,9.2 L7.7,12.4 L13.6,5.9"/>
+      </g>
+      <text class="steplab good" x="28" y="58" text-anchor="middle">VERIFY</text>
+    </g>
+  </g>
+</svg>
