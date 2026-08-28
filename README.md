@@ -1,4 +1,4 @@
-![cubrid-importdb](assets/banner.svg)
+![CUBRID ImportDB](assets/banner.svg)
 
 # CUBRID ImportDB
 
@@ -266,13 +266,24 @@ in pairs: one unmeasured warmup pair, then alternating arm order, reporting the
 **median of the per-pair ratios**, because drift that moves both arms of a pair
 barely moves their ratio.
 
-On this host that median has sat in a **0.37 – 0.60** band, at degree 1 and at
-degree 4 alike: importdb finishing in roughly 40–60% of the parallelism-matched
-baseline's time, or **1.7 – 2.7× faster**. It is a single-host trend on a shared
-machine, not a certified benchmark — the same baseline work has been measured at
-6.09 s, 9.40 s and 10.02 s in one afternoon, which is exactly why the statistic is
-a ratio and not a stopwatch. The case prints every pair, so measure your own
-hardware rather than trusting a number from someone else's.
+| degree | loaddb | importdb | median ratio | |
+|---|---|---|---|---|
+| **1** | 5.70 s | 2.68 s | 0.481 &nbsp;(pairs 0.444 – 0.677) | **2.13× faster** |
+| **4** | 5.08 s | 1.67 s | 0.362 &nbsp;(pairs 0.327 – 0.410) | **3.04× faster** |
+
+Medians of five counted pairs each, 2026-08-28, on a 16-core Linux host at load
+0.68 against CUBRID 11.5.0.2494 — the run itself is kept at
+[`docs/perf-2026-08-28.log`](docs/perf-2026-08-28.log), so the table can be
+audited rather than taken on trust. The advantage is the constraint lifecycle at
+both degrees — the fan-out is held equal — and it grows with concurrency, from
+2.1× to 3.0×. Why it grows is not something this case measures, so treat that
+as an observation rather than an explanation.
+
+This is a single-host trend on a shared machine, not a certified benchmark: the
+same baseline work has been measured at 3.59 s and 6.07 s within one run, which
+is exactly why the statistic is a ratio and not a stopwatch. The case prints
+every pair, so measure your own hardware rather than trusting a number from
+someone else's.
 
 The only thing it asserts about speed is a tripwire, not a claim: the case fails
 if the median ratio exceeds 1.5, which would mean importdb had become *slower*
