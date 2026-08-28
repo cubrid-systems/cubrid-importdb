@@ -40,7 +40,11 @@ permissions:
   contents: read
 
 env:
-  FTP_BASE: https://ftp.cubrid.org/CUBRID_Engine/nightly/daily_build
+  # No FTP_BASE here. tools/fetch_engine.sh defaults it to
+  # https://ftp.cubrid.org/CUBRID_Engine and appends /nightly/daily_build/ itself;
+  # setting the full path here produced .../nightly/daily_build/nightly/daily_build/,
+  # a 404, and the resolve step exited 77 before this workflow had ever built
+  # anything. contract.yml passes precisely because it sets no override.
   ENGINE_SERIES: '11.5'
 
 jobs:
