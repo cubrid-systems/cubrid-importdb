@@ -22,6 +22,9 @@
     .sep     { stroke: #eceff2; stroke-width: 1; }
     .divider { stroke: #dfe3e8; stroke-width: 1; stroke-dasharray: 3 3; }
     .btree   { fill: none; stroke: #FFAE00; stroke-width: 1.3; stroke-linejoin: round; }
+    .pending { fill: #eef0f3; stroke: #d4d9df; stroke-width: 0.8; }
+    .frame   { fill: none; stroke: #b9c0c8; stroke-width: 1.2; stroke-dasharray: 3.5 2.5; }
+    .frame-on{ fill: none; stroke: #00A62A; stroke-width: 1.5; }
 
     .tred { fill: #FF2B36; }   .torange  { fill: #FF6305; }
     .tamber { fill: #FFAE00; } .tgreen   { fill: #00D936; }
@@ -43,6 +46,9 @@
       .sep     { stroke: #1c222a; }
       .divider { stroke: #2b313a; }
       .tnavy   { fill: #4C86E8; }
+      .pending { fill: #1b2029; stroke: #2f3641; }
+      .frame   { stroke: #49525e; }
+      .frame-on{ stroke: #00D936; }
     }
 
     .lane  { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
@@ -115,25 +121,27 @@
 
   <rect class="box-good" x="332" y="220" width="150" height="60" rx="6"/>
   <text class="bt ink"   x="407" y="240" text-anchor="middle">load &#8594; bare heaps</text>
-      <polygon class="tred" points="411.6,244.5 407.0,249.1 411.6,249.1"/>
-      <polygon class="torange" points="407.7,250.3 412.3,250.3 412.3,254.9 407.7,254.9"/>
-      <polygon class="tamber" points="416.1,254.9 416.1,264.1 425.3,264.1"/>
-      <polygon class="tmagenta" points="399.8,252.5 399.8,261.7 395.2,257.1"/>
-      <polygon class="tnavy" points="388.7,260.1 393.3,260.1 397.9,264.7 393.3,264.7"/>
-      <polygon class="tgreen" points="407.0,270.3 416.2,270.3 407.0,279.5"/>
-      <polygon class="tcyan" points="397.0,269.8 401.6,269.8 401.6,274.4"/>
+  <rect class="frame" x="389" y="246" width="36" height="36" rx="2"/>
+  <polygon class="pending" points="392.0,249.0 422.0,249.0 407.0,264.0"/>
+  <polygon class="tgreen" points="392.0,249.0 407.0,264.0 392.0,279.0"/>
+  <polygon class="pending" points="422.0,249.0 422.0,264.0 414.5,256.5"/>
+  <polygon class="pending" points="407.0,264.0 414.5,256.5 422.0,264.0 414.5,271.5"/>
+  <polygon class="tcyan" points="407.0,264.0 414.5,271.5 399.5,271.5"/>
+  <polygon class="tmagenta" points="422.0,264.0 422.0,279.0 407.0,279.0"/>
+  <polygon class="tnavy" points="399.5,271.5 414.5,271.5 422.0,279.0 407.0,279.0"/>
 
   <path class="arrow" d="M490,250 H506 M501,246 L506,250 L501,254"/>
 
   <rect class="box" x="514" y="220" width="126" height="60" rx="6"/>
   <text class="bt ink"   x="577" y="240" text-anchor="middle">rebuild + ADD FK</text>
-      <polygon class="tred" points="579.7,251.1 575.1,255.7 579.7,255.7"/>
-      <polygon class="torange" points="574.9,256.5 579.5,256.5 579.5,261.1 574.9,261.1"/>
-      <polygon class="tamber" points="579.2,255.1 579.2,264.3 588.4,264.3"/>
-      <polygon class="tmagenta" points="575.7,255.9 575.7,265.1 571.1,260.5"/>
-      <polygon class="tnavy" points="565.6,259.6 570.2,259.6 574.8,264.2 570.2,264.2"/>
-      <polygon class="tgreen" points="574.8,263.7 584.0,263.7 574.8,272.9"/>
-      <polygon class="tcyan" points="570.6,263.9 575.2,263.9 575.2,268.5"/>
+  <rect class="frame-on" x="559" y="246" width="36" height="36" rx="2"/>
+  <polygon class="tamber" points="562.0,249.0 592.0,249.0 577.0,264.0"/>
+  <polygon class="tgreen" points="562.0,249.0 577.0,264.0 562.0,279.0"/>
+  <polygon class="tred" points="592.0,249.0 592.0,264.0 584.5,256.5"/>
+  <polygon class="torange" points="577.0,264.0 584.5,256.5 592.0,264.0 584.5,271.5"/>
+  <polygon class="tcyan" points="577.0,264.0 584.5,271.5 569.5,271.5"/>
+  <polygon class="tmagenta" points="592.0,264.0 592.0,279.0 577.0,279.0"/>
+  <polygon class="tnavy" points="569.5,271.5 584.5,271.5 592.0,279.0 577.0,279.0"/>
 
   <text class="note good" x="40" y="302">Building the FK over the loaded rows <tspan class="ink">is</tspan> the check &#8212; the engine validates every key as it goes.</text>
 

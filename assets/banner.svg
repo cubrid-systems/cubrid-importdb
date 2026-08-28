@@ -2,14 +2,19 @@
      role="img" aria-label="CUBRID ImportDB: one command to reload a whole CUBRID database from an unloaddb dump">
   <title>CUBRID ImportDB</title>
   <style>
-    /* CUBRID's brand palette, sampled from the official tangram mark
-       (ftp.cubrid.org/CUBRID_Docs/Brochure/BI_Images/cubrid-logo-tangram-300.png).
+    /* CUBRID's brand palette, sampled from the official tangram mark at
+       ftp.cubrid.org/CUBRID_Docs/Brochure/BI_Images/cubrid-logo-tangram-300.png.
        Light is the base so a renderer that ignores @media still gets a correct
        picture; no CSS custom properties, for the same reason. */
     .tred { fill: #FF2B36; }   .torange  { fill: #FF6305; }
     .tamber { fill: #FFAE00; } .tgreen   { fill: #00D936; }
     .tcyan { fill: #0091F8; }  .tmagenta { fill: #BE34A9; }
     .tnavy { fill: #002887; }
+
+    .pending { fill: #eef0f3; stroke: #d4d9df; stroke-width: 1; }
+    .slot    { fill: none; stroke: #b9c0c8; stroke-width: 1.2; stroke-dasharray: 3 2.5; }
+    .frame   { fill: none; stroke: #b9c0c8; stroke-width: 1.4; stroke-dasharray: 4 3; }
+    .frame-on{ fill: none; stroke: #00A62A; stroke-width: 1.8; }
 
     .bg     { fill: #f7f8fa; stroke: #dfe3e8; stroke-width: 1; }
     .ink    { fill: #1D1D1B; }
@@ -20,20 +25,25 @@
     .plate  { fill: #f7f8fa; }
     .rule   { stroke: #dfe3e8; stroke-width: 1; }
     .arrow  { fill: none; stroke: #8d95a0; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+    .drop   { fill: none; stroke: #FF6305; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
     .check  { fill: none; stroke: #00A62A; stroke-width: 2.3; stroke-linecap: round; stroke-linejoin: round; }
 
     @media (prefers-color-scheme: dark) {
-      .tnavy { fill: #4C86E8; }
-      .bg    { fill: #14181e; stroke: #2b313a; }
-      .ink   { fill: #e9edf2; }
-      .brand { fill: #4C86E8; }
-      .muted { fill: #98a1ad; }
-      .faint { fill: #6d7681; }
-      .good  { fill: #00D936; }
-      .plate { fill: #14181e; }
-      .rule  { stroke: #2b313a; }
-      .arrow { stroke: #6d7681; }
-      .check { stroke: #00D936; }
+      .tnavy   { fill: #4C86E8; }
+      .pending { fill: #1b2029; stroke: #2f3641; }
+      .slot    { stroke: #49525e; }
+      .frame   { stroke: #49525e; }
+      .frame-on{ stroke: #00D936; }
+      .bg      { fill: #14181e; stroke: #2b313a; }
+      .ink     { fill: #e9edf2; }
+      .brand   { fill: #4C86E8; }
+      .muted   { fill: #98a1ad; }
+      .faint   { fill: #6d7681; }
+      .good    { fill: #00D936; }
+      .plate   { fill: #14181e; }
+      .rule    { stroke: #2b313a; }
+      .arrow   { stroke: #6d7681; }
+      .check   { stroke: #00D936; }
     }
 
     .wordmark { font-family: ui-monospace, "SFMono-Regular", "JetBrains Mono", Menlo, Consolas, monospace;
@@ -47,50 +57,55 @@
 
   <rect class="bg" x="0.5" y="0.5" width="899" height="189" rx="10"/>
 
-  <!-- The mark. CUBRID's tangram is a square taken apart; this utility takes a
-       schema apart the same way and puts it back, so the pieces are the mark. -->
+  <!-- The mark: a tangram square with its last piece dropping into place. The
+       square is the finished database; importing is what completes it. -->
   <g>
-    <polygon class="tred" points="80.5,68.4 69.3,79.6 80.5,79.6"/>
-    <polygon class="torange" points="68.8,81.6 80.0,81.6 80.0,92.8 68.8,92.8"/>
-    <polygon class="tamber" points="79.4,78.3 79.4,100.7 101.8,100.7"/>
-    <polygon class="tmagenta" points="70.8,80.1 70.8,102.5 59.6,91.3"/>
-    <polygon class="tnavy" points="46.2,89.1 57.4,89.1 68.6,100.3 57.4,100.3"/>
-    <polygon class="tgreen" points="68.5,99.2 90.9,99.2 68.5,121.6"/>
-    <polygon class="tcyan" points="58.3,99.5 69.5,99.5 69.5,110.7"/>
+    <polygon class="tamber" points="44.0,76.0 90.4,76.0 67.2,99.2"/>
+    <polygon class="tgreen" points="44.0,76.0 67.2,99.2 44.0,122.4"/>
+    <polygon class="tred" points="90.4,76.0 90.4,99.2 78.8,87.6"/>
+    <polygon class="torange" points="67.2,99.2 78.8,87.6 90.4,99.2 78.8,110.8"/>
+    <polygon class="tcyan" points="67.2,99.2 78.8,110.8 55.6,110.8"/>
+    <polygon class="tmagenta" points="90.4,99.2 90.4,122.4 67.2,122.4"/>
+    <polygon class="tnavy" points="55.6,110.8 78.8,110.8 90.4,122.4 67.2,122.4"/>
+    <path class="drop" d="M67,50 V68 M60,62 L67,69.5 L74,62"/>
   </g>
 
-  <text class="wordmark" x="128" y="86">
+  <text class="wordmark" x="124" y="86">
     <tspan class="ink">CUBRID</tspan><tspan class="brand"> ImportDB</tspan>
   </text>
-  <text class="tag muted" x="130" y="118">Reload a whole database from an <tspan class="mono ink">unloaddb</tspan> dump in one</text>
-  <text class="tag muted" x="130" y="140">command &#8212; and never leave a foreign key the data breaks.</text>
+  <text class="tag muted" x="126" y="118">Reload a whole database from an <tspan class="mono ink">unloaddb</tspan> dump in one</text>
+  <text class="tag muted" x="126" y="140">command &#8212; and never leave a foreign key the data breaks.</text>
 
-  <line class="rule" x1="600" y1="34" x2="600" y2="156"/>
+  <line class="rule" x1="590" y1="34" x2="590" y2="156"/>
 
-  <!-- constraints off, then back on and checked by the engine -->
+  <!-- filling a defined-but-empty target, then closing it and checking it -->
   <g>
-      <polygon class="tred" points="675.1,51.2 665.7,60.6 675.1,60.6"/>
-      <polygon class="torange" points="666.9,63.0 676.3,63.0 676.3,72.4 666.9,72.4"/>
-      <polygon class="tamber" points="683.6,71.6 683.6,90.4 702.4,90.4"/>
-      <polygon class="tmagenta" points="652.1,67.0 652.1,85.8 642.7,76.4"/>
-      <polygon class="tnavy" points="629.6,82.0 639.0,82.0 648.4,91.4 639.0,91.4"/>
-      <polygon class="tgreen" points="665.7,102.0 684.5,102.0 665.7,120.8"/>
-      <polygon class="tcyan" points="646.1,101.1 655.5,101.1 655.5,110.5"/>
-    <text class="lab faint" x="664" y="150" text-anchor="middle">STRIP &#183; LOAD</text>
+    <rect class="frame" x="618" y="38" width="52" height="52" rx="3"/>
+    <polygon class="pending" points="622.0,42.0 666.0,42.0 644.0,64.0"/>
+    <polygon class="tgreen" points="622.0,42.0 644.0,64.0 622.0,86.0"/>
+    <polygon class="pending" points="666.0,42.0 666.0,64.0 655.0,53.0"/>
+    <polygon class="pending" points="644.0,64.0 655.0,53.0 666.0,64.0 655.0,75.0"/>
+    <polygon class="tcyan" points="644.0,64.0 655.0,75.0 633.0,75.0"/>
+    <polygon class="tmagenta" points="666.0,64.0 666.0,86.0 644.0,86.0"/>
+    <polygon class="tnavy" points="633.0,75.0 655.0,75.0 666.0,86.0 644.0,86.0"/>
+    <text class="lab faint" x="644" y="112" text-anchor="middle">STRIP &#183; LOAD</text>
+    <text class="lab faint" x="644" y="128" text-anchor="middle" opacity="0.75">bare heaps</text>
 
-    <path class="arrow" d="M722,88 H748 M742,83 L748,88 L742,93"/>
+    <path class="arrow" d="M700,64 H726 M720,59 L726,64 L720,69"/>
 
-      <polygon class="tred" points="811.4,63.7 802.0,73.1 811.4,73.1"/>
-      <polygon class="torange" points="801.6,74.8 811.0,74.8 811.0,84.2 801.6,84.2"/>
-      <polygon class="tamber" points="810.6,72.0 810.6,90.8 829.4,90.8"/>
-      <polygon class="tmagenta" points="803.4,73.5 803.4,92.3 794.0,82.9"/>
-      <polygon class="tnavy" points="782.6,81.1 792.0,81.1 801.4,90.5 792.0,90.5"/>
-      <polygon class="tgreen" points="801.4,89.5 820.2,89.5 801.4,108.3"/>
-      <polygon class="tcyan" points="792.8,89.8 802.2,89.8 802.2,99.2"/>
-    <g transform="translate(832,58)">
+    <rect class="frame-on" x="784" y="38" width="52" height="52" rx="3"/>
+    <polygon class="tamber" points="788.0,42.0 832.0,42.0 810.0,64.0"/>
+    <polygon class="tgreen" points="788.0,42.0 810.0,64.0 788.0,86.0"/>
+    <polygon class="tred" points="832.0,42.0 832.0,64.0 821.0,53.0"/>
+    <polygon class="torange" points="810.0,64.0 821.0,53.0 832.0,64.0 821.0,75.0"/>
+    <polygon class="tcyan" points="810.0,64.0 821.0,75.0 799.0,75.0"/>
+    <polygon class="tmagenta" points="832.0,64.0 832.0,86.0 810.0,86.0"/>
+    <polygon class="tnavy" points="799.0,75.0 821.0,75.0 832.0,86.0 810.0,86.0"/>
+    <g transform="translate(828,30)">
       <circle class="plate" cx="10" cy="10" r="10.5"/>
       <path class="check" d="M5,10.2 L8.4,13.6 L15,6.6"/>
     </g>
-    <text class="lab good" x="806" y="150" text-anchor="middle">REBUILD &#183; VERIFY</text>
+    <text class="lab good" x="810" y="112" text-anchor="middle">REBUILD &#183; VERIFY</text>
+    <text class="lab faint" x="810" y="128" text-anchor="middle" opacity="0.75">every FK checked</text>
   </g>
 </svg>
