@@ -92,6 +92,9 @@ jobs:
       - name: build deps
         run: |
           sudo apt-get update -qq
+          # openjdk-17-jdk, NOT -headless: the engine's find_package(JNI REQUIRED)
+          # is unconditional, and CMake's FindJNI wants AWT, whose libjawt.so the
+          # headless JRE does not ship -- "Could NOT find JNI (missing: AWT)".
           # systemtap-sdt-dev provides dtrace. The engine defaults ENABLE_SYSTEMTAP
           # ON and hard-errors in CMake without it -- and the flag reaches the
           # generated config.h that OUR translation units compile against
@@ -99,7 +102,7 @@ jobs:
           # dependency would build us against a different config.h than the
           # published engine was built with.
           sudo apt-get install -y -qq cmake ninja-build ccache gcc g++ \
-            libncurses-dev bison flex openjdk-17-jdk-headless systemtap-sdt-dev
+            libncurses-dev bison flex openjdk-17-jdk systemtap-sdt-dev
 
       # The utility's translation units need the engine's GENERATED headers and
       # four 3rdparty header trees (rapidjson, re2, lz4 and the installed

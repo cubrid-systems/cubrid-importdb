@@ -303,9 +303,10 @@ Two honest caveats:
 - To *configure* the CUBRID engine (which the build below does, for its generated
   headers) you also need Ninja or Make, a JDK, bison, flex, ncurses and
   `dtrace` — the set CI installs is `cmake ninja-build gcc g++ libncurses-dev
-  bison flex openjdk-17-jdk-headless systemtap-sdt-dev`. The last one is not
-  optional: the engine defaults `ENABLE_SYSTEMTAP` on and its CMake stops
-  without `dtrace`.
+  bison flex openjdk-17-jdk systemtap-sdt-dev`. Neither of the last two is
+  optional, and neither is obvious: the engine defaults `ENABLE_SYSTEMTAP` on and
+  its CMake stops without `dtrace`, and its `find_package(JNI REQUIRED)` wants
+  AWT, which a *headless* JDK does not ship.
 - A CUBRID **source tree** and a configured **build tree** to compile against, plus
   an **installed** CUBRID to link and run against. See [Install](#install).
 
