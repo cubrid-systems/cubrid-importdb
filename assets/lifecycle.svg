@@ -1,45 +1,48 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 344" width="900" height="344"
-     role="img" aria-label="The constraint lifecycle: loaddb keeps every constraint live during the data phase with foreign-key checking off; cubrid-importdb loads into bare heaps and builds the constraints afterwards, so the engine validates every foreign key.">
+     role="img" aria-label="The constraint lifecycle: loaddb keeps every constraint live during the data phase with foreign-key checking off; CUBRID ImportDB loads into bare heaps and builds the constraints afterwards, so the engine validates every foreign key.">
   <title>The constraint lifecycle, two ways</title>
   <style>
-    /* Light is the base palette so a renderer that ignores @media still gets a
-       correct picture. No CSS custom properties, for the same reason. */
+    /* CUBRID's brand hues, sampled from the official tangram mark. The logo
+       palette is tuned for fills, not for 11px body text, so text uses darkened
+       variants of the same hues and only fills/strokes get the pure values.
+       Light is the base palette so a renderer that ignores @media still gets a
+       correct picture; no CSS custom properties, for the same reason. */
     .bg      { fill: #ffffff; }
-    .ink     { fill: #1f2328; }
-    .muted   { fill: #57606a; }
-    .faint   { fill: #8c959f; }
-    .bad     { fill: #c0392b; }
-    .good    { fill: #1a7f37; }
-    .warn    { fill: #b7791f; }
-    .box     { fill: #ffffff; stroke: #d0d7de; stroke-width: 1.3; }
-    .box-warn{ fill: #fdf6e7; stroke: #b7791f; stroke-width: 1.4; }
-    .box-good{ fill: #eff7f0; stroke: #1a7f37; stroke-width: 1.4; }
-    .box-bad { fill: #fdf0ee; stroke: #c0392b; stroke-width: 1.4; }
-    .arrow   { fill: none; stroke: #8c959f; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
-    .sep     { stroke: #e4e8ec; stroke-width: 1; }
-    .divider { stroke: #d0d7de; stroke-width: 1; stroke-dasharray: 3 3; }
-    .tree    { fill: none; stroke: #b7791f; stroke-width: 1.2; stroke-linejoin: round; }
-    .heap    { fill: none; stroke: #1a7f37; stroke-width: 1.2; }
-    .heapfill{ fill: #cfe6d5; }
+    .ink     { fill: #1D1D1B; }
+    .muted   { fill: #5b6470; }
+    .faint   { fill: #8d95a0; }
+    .bad     { fill: #D91B26; }
+    .good    { fill: #00992B; }
+
+    .box     { fill: #ffffff; stroke: #dfe3e8; stroke-width: 1.3; }
+    .box-bad { fill: #fff2f2; stroke: #FF2B36; stroke-width: 1.4; }
+    .box-warn{ fill: #fff8e8; stroke: #FFAE00; stroke-width: 1.5; }
+    .box-good{ fill: #f0fdf3; stroke: #00D936; stroke-width: 1.5; }
+    .arrow   { fill: none; stroke: #8d95a0; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+    .sep     { stroke: #eceff2; stroke-width: 1; }
+    .divider { stroke: #dfe3e8; stroke-width: 1; stroke-dasharray: 3 3; }
+    .btree   { fill: none; stroke: #FFAE00; stroke-width: 1.3; stroke-linejoin: round; }
+
+    .tred { fill: #FF2B36; }   .torange  { fill: #FF6305; }
+    .tamber { fill: #FFAE00; } .tgreen   { fill: #00D936; }
+    .tcyan { fill: #0091F8; }  .tmagenta { fill: #BE34A9; }
+    .tnavy { fill: #002887; }
 
     @media (prefers-color-scheme: dark) {
       .bg      { fill: #0d1117; }
-      .ink     { fill: #e6edf3; }
-      .muted   { fill: #9198a1; }
-      .faint   { fill: #6e7681; }
-      .bad     { fill: #ff7b72; }
-      .good    { fill: #3fb950; }
-      .warn    { fill: #d29922; }
-      .box     { fill: #161b22; stroke: #30363d; }
-      .box-warn{ fill: #221a08; stroke: #d29922; }
-      .box-good{ fill: #0d1f13; stroke: #3fb950; }
-      .box-bad { fill: #251715; stroke: #ff7b72; }
-      .arrow   { stroke: #6e7681; }
-      .sep     { stroke: #21262d; }
-      .divider { stroke: #30363d; }
-      .tree    { stroke: #d29922; }
-      .heap    { stroke: #3fb950; }
-      .heapfill{ fill: #1c3b26; }
+      .ink     { fill: #e9edf2; }
+      .muted   { fill: #98a1ad; }
+      .faint   { fill: #6d7681; }
+      .bad     { fill: #FF6A73; }
+      .good    { fill: #00D936; }
+      .box     { fill: #14181e; stroke: #2b313a; }
+      .box-bad { fill: #241415; stroke: #FF2B36; }
+      .box-warn{ fill: #241d08; stroke: #FFAE00; }
+      .box-good{ fill: #0c2113; stroke: #00D936; }
+      .arrow   { stroke: #6d7681; }
+      .sep     { stroke: #1c222a; }
+      .divider { stroke: #2b313a; }
+      .tnavy   { fill: #4C86E8; }
     }
 
     .lane  { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
@@ -58,82 +61,82 @@
 
   <rect class="bg" x="0" y="0" width="900" height="344"/>
 
-  <!-- ============ lane 1: the hand-scripted loaddb path ============ -->
+  <!-- lane 1: the hand-scripted loaddb path -->
   <text class="lane ink"  x="40" y="34">loaddb</text>
   <text class="lanen faint" x="106" y="34">schema first, so every constraint is live for the whole data phase</text>
 
-  <g>
-    <rect class="box" x="40" y="50" width="150" height="60" rx="6"/>
-    <text class="bt ink"   x="115" y="74" text-anchor="middle">define schema</text>
-    <text class="bs muted" x="115" y="92" text-anchor="middle">PK · UNIQUE · FK all live</text>
+  <rect class="box" x="40" y="50" width="150" height="60" rx="6"/>
+  <text class="bt ink"   x="115" y="74" text-anchor="middle">define schema</text>
+  <text class="bs muted" x="115" y="92" text-anchor="middle">PK &#183; UNIQUE &#183; FK all live</text>
 
-    <path class="arrow" d="M198,80 H214 M209,76 L214,80 L209,84"/>
+  <path class="arrow" d="M198,80 H214 M209,76 L214,80 L209,84"/>
 
-    <rect class="box-warn" x="222" y="50" width="240" height="60" rx="6"/>
-    <text class="bt warn"  x="342" y="72" text-anchor="middle">load rows</text>
-    <text class="bs muted" x="342" y="89" text-anchor="middle">every b-tree maintained per row</text>
-    <g transform="translate(300,94)">
-      <path class="tree" d="M6,10 L11,2 L16,10 Z"/>
-      <path class="tree" d="M34,10 L39,2 L44,10 Z"/>
-      <path class="tree" d="M62,10 L67,2 L72,10 Z"/>
-    </g>
-
-    <path class="arrow" d="M470,80 H486 M481,76 L486,80 L481,84"/>
-
-    <rect class="box" x="494" y="50" width="146" height="60" rx="6"/>
-    <text class="bt ink"   x="567" y="74" text-anchor="middle">create indexes</text>
-    <text class="bs muted" x="567" y="92" text-anchor="middle">the deferred ones only</text>
+  <rect class="box-warn" x="222" y="50" width="240" height="60" rx="6"/>
+  <text class="bt ink"   x="342" y="72" text-anchor="middle">load rows</text>
+  <text class="bs muted" x="342" y="89" text-anchor="middle">every b-tree maintained per row</text>
+  <g transform="translate(300,94)">
+    <path class="btree" d="M6,10 L11,2 L16,10 Z"/>
+    <path class="btree" d="M34,10 L39,2 L44,10 Z"/>
+    <path class="btree" d="M62,10 L67,2 L72,10 Z"/>
   </g>
 
-  <text class="note bad" x="40" y="132">FOREIGN KEY checking is OFF for the entire data phase — and never turned back on to re-check.</text>
+  <path class="arrow" d="M470,80 H486 M481,76 L486,80 L481,84"/>
 
-  <!-- result, lane 1 -->
+  <rect class="box" x="494" y="50" width="146" height="60" rx="6"/>
+  <text class="bt ink"   x="567" y="74" text-anchor="middle">create indexes</text>
+  <text class="bs muted" x="567" y="92" text-anchor="middle">the deferred ones only</text>
+
+  <text class="note bad" x="40" y="132">FOREIGN KEY checking is OFF for the entire data phase &#8212; and never turned back on to re-check.</text>
+
   <line class="sep" x1="664" y1="20" x2="664" y2="324"/>
   <rect class="box-bad" x="692" y="46" width="184" height="86" rx="6"/>
   <text class="res bad"  x="706" y="68">An orphan row loads clean.</text>
-  <text class="note muted" x="706" y="87">exit 0, nothing reported —</text>
+  <text class="note muted" x="706" y="87">exit 0, nothing reported &#8212;</text>
   <text class="note muted" x="706" y="103">the FK is in the catalog and</text>
   <text class="note muted" x="706" y="119">the data violates it.</text>
 
   <line class="divider" x1="40" y1="164" x2="876" y2="164"/>
 
-  <!-- ============ lane 2: cubrid-importdb ============ -->
-  <text class="lane ink"  x="40" y="204">cubrid-importdb</text>
+  <!-- lane 2: CUBRID ImportDB -->
+  <text class="lane ink"  x="40" y="204">CUBRID ImportDB</text>
   <text class="lanen faint" x="182" y="204">constraints come off, data goes in flat, constraints go back on</text>
 
-  <g>
-    <rect class="box" x="40" y="220" width="124" height="60" rx="6"/>
-    <text class="bt ink"   x="102" y="248" text-anchor="middle">define schema</text>
-    <text class="bs muted" x="102" y="265" text-anchor="middle">from the dump</text>
+  <rect class="box" x="40" y="220" width="124" height="60" rx="6"/>
+  <text class="bt ink"   x="102" y="248" text-anchor="middle">define schema</text>
+  <text class="bs muted" x="102" y="265" text-anchor="middle">from the dump</text>
 
-    <path class="arrow" d="M172,250 H188 M183,246 L188,250 L183,254"/>
+  <path class="arrow" d="M172,250 H188 M183,246 L188,250 L183,254"/>
 
-    <rect class="box" x="196" y="220" width="104" height="60" rx="6"/>
-    <text class="bt ink"   x="248" y="248" text-anchor="middle">strip</text>
-    <text class="bs muted" x="248" y="265" text-anchor="middle">PK · UNIQUE · FK</text>
+  <rect class="box" x="196" y="220" width="104" height="60" rx="6"/>
+  <text class="bt ink"   x="248" y="248" text-anchor="middle">strip</text>
+  <text class="bs muted" x="248" y="265" text-anchor="middle">PK &#183; UNIQUE &#183; FK</text>
 
-    <path class="arrow" d="M308,250 H324 M319,246 L324,250 L319,254"/>
+  <path class="arrow" d="M308,250 H324 M319,246 L324,250 L319,254"/>
 
-    <rect class="box-good" x="332" y="220" width="150" height="60" rx="6"/>
-    <text class="bt good"  x="407" y="243" text-anchor="middle">load → bare heaps</text>
-    <text class="bs muted" x="407" y="259" text-anchor="middle">nothing to maintain</text>
-    <g transform="translate(383,264)">
-      <rect class="heapfill" x="0"  y="2" width="14" height="4" rx="2"/>
-      <rect class="heapfill" x="17" y="2" width="14" height="4" rx="2"/>
-      <rect class="heapfill" x="34" y="2" width="14" height="4" rx="2"/>
-    </g>
+  <rect class="box-good" x="332" y="220" width="150" height="60" rx="6"/>
+  <text class="bt ink"   x="407" y="240" text-anchor="middle">load &#8594; bare heaps</text>
+      <polygon class="tred" points="411.6,244.5 407.0,249.1 411.6,249.1"/>
+      <polygon class="torange" points="407.7,250.3 412.3,250.3 412.3,254.9 407.7,254.9"/>
+      <polygon class="tamber" points="416.1,254.9 416.1,264.1 425.3,264.1"/>
+      <polygon class="tmagenta" points="399.8,252.5 399.8,261.7 395.2,257.1"/>
+      <polygon class="tnavy" points="388.7,260.1 393.3,260.1 397.9,264.7 393.3,264.7"/>
+      <polygon class="tgreen" points="407.0,270.3 416.2,270.3 407.0,279.5"/>
+      <polygon class="tcyan" points="397.0,269.8 401.6,269.8 401.6,274.4"/>
 
-    <path class="arrow" d="M490,250 H506 M501,246 L506,250 L501,254"/>
+  <path class="arrow" d="M490,250 H506 M501,246 L506,250 L501,254"/>
 
-    <rect class="box" x="514" y="220" width="126" height="60" rx="6"/>
-    <text class="bt ink"   x="577" y="243" text-anchor="middle">bulk-build</text>
-    <text class="bs muted" x="577" y="259" text-anchor="middle">PK · UNIQUE · index,</text>
-    <text class="bs muted" x="577" y="273" text-anchor="middle">then ADD FOREIGN KEY</text>
-  </g>
+  <rect class="box" x="514" y="220" width="126" height="60" rx="6"/>
+  <text class="bt ink"   x="577" y="240" text-anchor="middle">rebuild + ADD FK</text>
+      <polygon class="tred" points="579.7,251.1 575.1,255.7 579.7,255.7"/>
+      <polygon class="torange" points="574.9,256.5 579.5,256.5 579.5,261.1 574.9,261.1"/>
+      <polygon class="tamber" points="579.2,255.1 579.2,264.3 588.4,264.3"/>
+      <polygon class="tmagenta" points="575.7,255.9 575.7,265.1 571.1,260.5"/>
+      <polygon class="tnavy" points="565.6,259.6 570.2,259.6 574.8,264.2 570.2,264.2"/>
+      <polygon class="tgreen" points="574.8,263.7 584.0,263.7 574.8,272.9"/>
+      <polygon class="tcyan" points="570.6,263.9 575.2,263.9 575.2,268.5"/>
 
-  <text class="note good" x="40" y="302">Building the FK over the loaded rows <tspan class="ink">is</tspan> the check — the engine validates every key as it goes.</text>
+  <text class="note good" x="40" y="302">Building the FK over the loaded rows <tspan class="ink">is</tspan> the check &#8212; the engine validates every key as it goes.</text>
 
-  <!-- result, lane 2 -->
   <rect class="box-good" x="692" y="212" width="184" height="86" rx="6"/>
   <text class="res good" x="706" y="234">Every FK holds.</text>
   <text class="note muted" x="706" y="253">Or the one that does not is</text>
