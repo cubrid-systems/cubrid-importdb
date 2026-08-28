@@ -10,21 +10,18 @@
     .bg      { fill: #ffffff; }
     .ink     { fill: #1D1D1B; }
     .muted   { fill: #5b6470; }
-    .faint   { fill: #8d95a0; }
     .bad     { fill: #D91B26; }
-    .good    { fill: #00992B; }
+    .good    { fill: #00801F; }
 
     .box     { fill: #ffffff; stroke: #dfe3e8; stroke-width: 1.3; }
     .box-bad { fill: #fff2f2; stroke: #FF2B36; stroke-width: 1.4; }
     .box-warn{ fill: #fff8e8; stroke: #FFAE00; stroke-width: 1.5; }
     .box-good{ fill: #f0fdf3; stroke: #00D936; stroke-width: 1.5; }
     .arrow   { fill: none; stroke: #8d95a0; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
-    .sep     { stroke: #eceff2; stroke-width: 1; }
+    .sep     { stroke: #dfe3e8; stroke-width: 1; }
     .divider { stroke: #dfe3e8; stroke-width: 1; stroke-dasharray: 3 3; }
-    .btree   { fill: none; stroke: #FFAE00; stroke-width: 1.3; stroke-linejoin: round; }
-    .pending { fill: #eef0f3; stroke: #d4d9df; stroke-width: 0.8; }
-    .frame   { fill: none; stroke: #b9c0c8; stroke-width: 1.2; stroke-dasharray: 3.5 2.5; }
-    .frame-on{ fill: none; stroke: #00A62A; stroke-width: 1.5; }
+    .frame   { fill: none; stroke: #8b93a0; stroke-width: 1.1; stroke-dasharray: 3 2.2; }
+    .frame-on{ fill: none; stroke: #00A62A; stroke-width: 1.4; }
 
     .tred { fill: #FF2B36; }   .torange  { fill: #FF6305; }
     .tamber { fill: #FFAE00; } .tgreen   { fill: #00D936; }
@@ -35,26 +32,22 @@
       .bg      { fill: #0d1117; }
       .ink     { fill: #e9edf2; }
       .muted   { fill: #98a1ad; }
-      .faint   { fill: #6d7681; }
       .bad     { fill: #FF6A73; }
-      .good    { fill: #00D936; }
+      .good    { fill: #3CE066; }
       .box     { fill: #14181e; stroke: #2b313a; }
       .box-bad { fill: #241415; stroke: #FF2B36; }
-      .box-warn{ fill: #241d08; stroke: #FFAE00; }
+      .box-warn{ fill: #14181e; stroke: #FFAE00; }
       .box-good{ fill: #0c2113; stroke: #00D936; }
       .arrow   { stroke: #6d7681; }
-      .sep     { stroke: #1c222a; }
+      .sep     { stroke: #2b313a; }
       .divider { stroke: #2b313a; }
-      .tnavy   { fill: #4C86E8; }
-      .pending { fill: #1b2029; stroke: #2f3641; }
-      .frame   { stroke: #49525e; }
-      .frame-on{ stroke: #00D936; }
+      .tnavy   { fill: #2F62C8; }
+      .frame   { stroke: #6b7684; }
+      .frame-on{ stroke: #5CE882; }
     }
 
     .lane  { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
              font-size: 14px; font-weight: 700; }
-    .lanen { font-family: ui-sans-serif, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-             font-size: 12px; }
     .bt    { font-family: ui-sans-serif, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
              font-size: 12.5px; font-weight: 600; }
     .bs    { font-family: ui-sans-serif, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -68,86 +61,80 @@
   <rect class="bg" x="0" y="0" width="900" height="344"/>
 
   <!-- lane 1: the hand-scripted loaddb path -->
-  <text class="lane ink"  x="40" y="34">loaddb</text>
-  <text class="lanen faint" x="106" y="34">schema first, so every constraint is live for the whole data phase</text>
+  <text class="lane ink"  x="44" y="34">loaddb</text>
 
-  <rect class="box" x="40" y="50" width="150" height="60" rx="6"/>
-  <text class="bt ink"   x="115" y="74" text-anchor="middle">define schema</text>
-  <text class="bs muted" x="115" y="92" text-anchor="middle">PK &#183; UNIQUE &#183; FK all live</text>
+  <rect class="box" x="44" y="50" width="150" height="60" rx="6"/>
+  <text class="bt ink"   x="119" y="74" text-anchor="middle">define schema</text>
+  <text class="bs muted" x="119" y="92" text-anchor="middle">PK &#183; UNIQUE &#183; FK all live</text>
 
-  <path class="arrow" d="M198,80 H214 M209,76 L214,80 L209,84"/>
+  <path class="arrow" d="M202,80 H218 M213,76 L218,80 L213,84"/>
 
-  <rect class="box-warn" x="222" y="50" width="240" height="60" rx="6"/>
-  <text class="bt ink"   x="342" y="72" text-anchor="middle">load rows</text>
-  <text class="bs muted" x="342" y="89" text-anchor="middle">every b-tree maintained per row</text>
-  <g transform="translate(300,94)">
-    <path class="btree" d="M6,10 L11,2 L16,10 Z"/>
-    <path class="btree" d="M34,10 L39,2 L44,10 Z"/>
-    <path class="btree" d="M62,10 L67,2 L72,10 Z"/>
-  </g>
+  <rect class="box-warn" x="226" y="50" width="240" height="60" rx="6"/>
+  <text class="bt ink"   x="346" y="74" text-anchor="middle">load rows</text>
+  <text class="bs muted" x="346" y="92" text-anchor="middle">every b-tree maintained per row</text>
 
-  <path class="arrow" d="M470,80 H486 M481,76 L486,80 L481,84"/>
+  <path class="arrow" d="M474,80 H490 M485,76 L490,80 L485,84"/>
 
-  <rect class="box" x="494" y="50" width="146" height="60" rx="6"/>
-  <text class="bt ink"   x="567" y="74" text-anchor="middle">create indexes</text>
-  <text class="bs muted" x="567" y="92" text-anchor="middle">the deferred ones only</text>
+  <rect class="box" x="498" y="50" width="146" height="60" rx="6"/>
+  <text class="bt ink"   x="571" y="74" text-anchor="middle">create indexes</text>
+  <text class="bs muted" x="571" y="92" text-anchor="middle">the deferred ones only</text>
 
-  <text class="note bad" x="40" y="132">FOREIGN KEY checking is OFF for the entire data phase &#8212; and never turned back on to re-check.</text>
+  <text class="note bad" x="44" y="132">FOREIGN KEY checking is OFF for the entire data phase &#8212; and never turned back on to re-check.</text>
 
-  <line class="sep" x1="664" y1="20" x2="664" y2="324"/>
-  <rect class="box-bad" x="692" y="46" width="184" height="86" rx="6"/>
-  <text class="res bad"  x="706" y="68">An orphan row loads clean.</text>
-  <text class="note muted" x="706" y="87">exit 0, nothing reported &#8212;</text>
-  <text class="note muted" x="706" y="103">the FK is in the catalog and</text>
-  <text class="note muted" x="706" y="119">the data violates it.</text>
+  <line class="sep" x1="658" y1="20" x2="658" y2="324"/>
+  <rect class="box-bad" x="672" y="46" width="184" height="86" rx="6"/>
+  <text class="res bad"  x="686" y="68">An orphan row loads clean.</text>
+  <text class="note muted" x="686" y="87">exit 0, nothing reported &#8212;</text>
+  <text class="note muted" x="686" y="103">the FK is in the catalog and</text>
+  <text class="note muted" x="686" y="119">the data violates it.</text>
 
-  <line class="divider" x1="40" y1="164" x2="876" y2="164"/>
+  <line class="divider" x1="44" y1="164" x2="654" y2="164"/>
+  <line class="divider" x1="662" y1="164" x2="856" y2="164"/>
 
   <!-- lane 2: CUBRID ImportDB -->
-  <text class="lane ink"  x="40" y="204">CUBRID ImportDB</text>
-  <text class="lanen faint" x="182" y="204">constraints come off, data goes in flat, constraints go back on</text>
+  <text class="lane ink"  x="44" y="204">CUBRID ImportDB</text>
 
-  <rect class="box" x="40" y="220" width="124" height="60" rx="6"/>
-  <text class="bt ink"   x="102" y="248" text-anchor="middle">define schema</text>
-  <text class="bs muted" x="102" y="265" text-anchor="middle">from the dump</text>
+  <rect class="box" x="44" y="220" width="124" height="60" rx="6"/>
+  <text class="bt ink"   x="106" y="248" text-anchor="middle">define schema</text>
+  <text class="bs muted" x="106" y="265" text-anchor="middle">from the dump</text>
 
-  <path class="arrow" d="M172,250 H188 M183,246 L188,250 L183,254"/>
+  <path class="arrow" d="M176,250 H192 M187,246 L192,250 L187,254"/>
 
-  <rect class="box" x="196" y="220" width="104" height="60" rx="6"/>
-  <text class="bt ink"   x="248" y="248" text-anchor="middle">strip</text>
-  <text class="bs muted" x="248" y="265" text-anchor="middle">PK &#183; UNIQUE &#183; FK</text>
+  <rect class="box" x="200" y="220" width="104" height="60" rx="6"/>
+  <text class="bt ink"   x="252" y="248" text-anchor="middle">strip</text>
+  <text class="bs muted" x="252" y="265" text-anchor="middle">PK &#183; UNIQUE &#183; FK</text>
 
-  <path class="arrow" d="M308,250 H324 M319,246 L324,250 L319,254"/>
+  <path class="arrow" d="M312,250 H328 M323,246 L328,250 L323,254"/>
 
-  <rect class="box-good" x="332" y="220" width="150" height="60" rx="6"/>
-  <text class="bt ink"   x="407" y="240" text-anchor="middle">load &#8594; bare heaps</text>
-  <rect class="frame" x="389" y="246" width="36" height="36" rx="2"/>
-  <polygon class="pending" points="392.0,249.0 422.0,249.0 407.0,264.0"/>
-  <polygon class="tgreen" points="392.0,249.0 407.0,264.0 392.0,279.0"/>
-  <polygon class="pending" points="422.0,249.0 422.0,264.0 414.5,256.5"/>
-  <polygon class="pending" points="407.0,264.0 414.5,256.5 422.0,264.0 414.5,271.5"/>
-  <polygon class="tcyan" points="407.0,264.0 414.5,271.5 399.5,271.5"/>
-  <polygon class="tmagenta" points="422.0,264.0 422.0,279.0 407.0,279.0"/>
-  <polygon class="tnavy" points="399.5,271.5 414.5,271.5 422.0,279.0 407.0,279.0"/>
+  <rect class="box-good" x="336" y="220" width="146" height="60" rx="6"/>
+  <text class="bt ink"   x="409" y="234" text-anchor="middle">load &#8594; bare heaps</text>
+  <rect class="frame" x="389.0" y="240" width="36" height="36" rx="2"/>
+  <polygon class="tamber" points="394.0,243.4 420.0,243.4 407.0,256.4"/>
+  <polygon class="tgreen" points="392.4,245.0 405.4,258.0 392.4,271.0"/>
+  <polygon class="tred" points="421.4,244.2 421.4,257.2 414.9,250.7"/>
+  <polygon class="torange" points="408.6,258.0 415.1,251.5 421.6,258.0 415.1,264.5"/>
+  <polygon class="tcyan" points="407.0,259.6 413.5,266.1 400.5,266.1"/>
+  <polygon class="tmagenta" points="421.1,259.1 421.1,272.1 408.1,272.1"/>
+  <polygon class="tnavy" points="393.5,272.5 400.0,266.0 413.0,266.0 406.5,272.5"/>
 
   <path class="arrow" d="M490,250 H506 M501,246 L506,250 L501,254"/>
 
   <rect class="box" x="514" y="220" width="126" height="60" rx="6"/>
-  <text class="bt ink"   x="577" y="240" text-anchor="middle">rebuild + ADD FK</text>
-  <rect class="frame-on" x="559" y="246" width="36" height="36" rx="2"/>
-  <polygon class="tamber" points="562.0,249.0 592.0,249.0 577.0,264.0"/>
-  <polygon class="tgreen" points="562.0,249.0 577.0,264.0 562.0,279.0"/>
-  <polygon class="tred" points="592.0,249.0 592.0,264.0 584.5,256.5"/>
-  <polygon class="torange" points="577.0,264.0 584.5,256.5 592.0,264.0 584.5,271.5"/>
-  <polygon class="tcyan" points="577.0,264.0 584.5,271.5 569.5,271.5"/>
-  <polygon class="tmagenta" points="592.0,264.0 592.0,279.0 577.0,279.0"/>
-  <polygon class="tnavy" points="569.5,271.5 584.5,271.5 592.0,279.0 577.0,279.0"/>
+  <text class="bt ink"   x="577" y="234" text-anchor="middle">rebuild + ADD FK</text>
+  <rect class="frame-on" x="559.0" y="240" width="36" height="36" rx="2"/>
+  <polygon class="tamber" points="564.0,245.0 590.0,245.0 577.0,258.0"/>
+  <polygon class="tgreen" points="564.0,245.0 577.0,258.0 564.0,271.0"/>
+  <polygon class="tred" points="590.0,245.0 590.0,258.0 583.5,251.5"/>
+  <polygon class="torange" points="577.0,258.0 583.5,251.5 590.0,258.0 583.5,264.5"/>
+  <polygon class="tcyan" points="577.0,258.0 583.5,264.5 570.5,264.5"/>
+  <polygon class="tmagenta" points="590.0,258.0 590.0,271.0 577.0,271.0"/>
+  <polygon class="tnavy" points="564.0,271.0 570.5,264.5 583.5,264.5 577.0,271.0"/>
 
-  <text class="note good" x="40" y="302">Building the FK over the loaded rows <tspan class="ink">is</tspan> the check &#8212; the engine validates every key as it goes.</text>
+  <text class="note good" x="44" y="302">Building the FK over the loaded rows <tspan class="ink">is</tspan> the check &#8212; the engine validates every key as it goes.</text>
 
-  <rect class="box-good" x="692" y="212" width="184" height="86" rx="6"/>
-  <text class="res good" x="706" y="234">Every FK holds.</text>
-  <text class="note muted" x="706" y="253">Or the one that does not is</text>
-  <text class="note muted" x="706" y="269">withheld, exit 1, and every</text>
-  <text class="note muted" x="706" y="285">offending row is named.</text>
+  <rect class="box-good" x="672" y="216" width="184" height="86" rx="6"/>
+  <text class="res good" x="686" y="238">Every FK holds.</text>
+  <text class="note muted" x="686" y="257">Or the one that does not is</text>
+  <text class="note muted" x="686" y="273">withheld, exit 1, and every</text>
+  <text class="note muted" x="686" y="289">offending row is named.</text>
 </svg>

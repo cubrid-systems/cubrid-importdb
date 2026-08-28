@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64"
+     role="img" aria-label="CUBRID ImportDB">
+  <title>CUBRID ImportDB</title>
+  <style>
+    /* The banner's seven-piece tangram reduced to the three right-isosceles
+       pieces the square actually decomposes into. Seven colours cannot survive
+       16px; three can. Same 45-degree family, same palette, same gesture -- the
+       top piece is not yet seated, so the whole is one piece short of closed. */
+    .a { fill: #FFAE00; }
+    .g { fill: #00D936; }
+    .n { fill: #002887; }
+    @media (prefers-color-scheme: dark) {
+      /* #002887 is unreadable on a dark ground; same lift the banner uses. */
+      .n { fill: #4C86E8; }
+    }
+  </style>
+  <polygon class="g" points="8.40,12.50 32.00,36.10 8.40,59.70"/>
+  <polygon class="n" points="8.40,59.70 55.60,12.50 55.60,59.70"/>
+  <polygon class="a" points="8.40,4.00 55.60,4.00 32.00,27.60"/>
+</svg>

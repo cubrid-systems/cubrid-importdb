@@ -11,101 +11,94 @@
     .tcyan { fill: #0091F8; }  .tmagenta { fill: #BE34A9; }
     .tnavy { fill: #002887; }
 
-    .pending { fill: #eef0f3; stroke: #d4d9df; stroke-width: 1; }
-    .slot    { fill: none; stroke: #b9c0c8; stroke-width: 1.2; stroke-dasharray: 3 2.5; }
-    .frame   { fill: none; stroke: #b9c0c8; stroke-width: 1.4; stroke-dasharray: 4 3; }
-    .frame-on{ fill: none; stroke: #00A62A; stroke-width: 1.8; }
+    .frame    { fill: none; stroke: #8b93a0; stroke-width: 1.4; stroke-dasharray: 4 3; }
+    .frame-on { fill: none; stroke: #00A62A; stroke-width: 1.8; }
 
-    .bg     { fill: #f7f8fa; stroke: #dfe3e8; stroke-width: 1; }
+    .bg     { fill: #ffffff; }
     .ink    { fill: #1D1D1B; }
     .brand  { fill: #002887; }
     .muted  { fill: #5b6470; }
-    .faint  { fill: #8d95a0; }
-    .good   { fill: #00A62A; }
-    .plate  { fill: #f7f8fa; }
-    .rule   { stroke: #dfe3e8; stroke-width: 1; }
+    .faint  { fill: #667080; }
+    .good   { fill: #00801F; }
+    .badgebg{ fill: #ffffff; stroke: #00A62A; stroke-width: 1.2; }
     .arrow  { fill: none; stroke: #8d95a0; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
-    .drop   { fill: none; stroke: #FF6305; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
     .check  { fill: none; stroke: #00A62A; stroke-width: 2.3; stroke-linecap: round; stroke-linejoin: round; }
 
     @media (prefers-color-scheme: dark) {
-      .tnavy   { fill: #4C86E8; }
-      .pending { fill: #1b2029; stroke: #2f3641; }
-      .slot    { stroke: #49525e; }
-      .frame   { stroke: #49525e; }
-      .frame-on{ stroke: #00D936; }
-      .bg      { fill: #14181e; stroke: #2b313a; }
-      .ink     { fill: #e9edf2; }
-      .brand   { fill: #4C86E8; }
-      .muted   { fill: #98a1ad; }
-      .faint   { fill: #6d7681; }
-      .good    { fill: #00D936; }
-      .plate   { fill: #14181e; }
-      .rule    { stroke: #2b313a; }
-      .arrow   { stroke: #6d7681; }
-      .check   { stroke: #00D936; }
+      .tnavy    { fill: #2F62C8; }
+      .frame    { stroke: #6b7684; }
+      .frame-on { stroke: #5CE882; }
+      .bg       { fill: #0d1117; }
+      .ink      { fill: #e9edf2; }
+      .brand    { fill: #4C86E8; }
+      .muted    { fill: #98a1ad; }
+      .faint    { fill: #7E8794; }
+      .good     { fill: #3CE066; }
+      .badgebg  { fill: #0d1117; stroke: #5CE882; }
+      .arrow    { stroke: #6d7681; }
+      .check    { stroke: #00D936; }
     }
 
-    .wordmark { font-family: ui-monospace, "SFMono-Regular", "JetBrains Mono", Menlo, Consolas, monospace;
-                font-size: 35px; font-weight: 700; letter-spacing: -0.6px; }
+    .wordmark  { font-family: ui-monospace, "SFMono-Regular", "JetBrains Mono", Menlo, Consolas, monospace;
+                 font-size: 35px; font-weight: 700; }
+    .wm-parent { font-weight: 400; }
     .tag  { font-family: ui-sans-serif, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             font-size: 15px; }
     .mono { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; font-size: 14px; }
     .lab  { font-family: ui-sans-serif, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             font-size: 10.5px; font-weight: 600; letter-spacing: 0.8px; }
+    .lab2 { font-family: ui-sans-serif, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            font-size: 10px; font-weight: 500; }
   </style>
 
-  <rect class="bg" x="0.5" y="0.5" width="899" height="189" rx="10"/>
+  <rect class="bg" x="0" y="0" width="900" height="190"/>
 
-  <!-- The mark: a tangram square with its last piece dropping into place. The
-       square is the finished database; importing is what completes it. -->
+  <!-- The mark: a tangram square, one large triangle not yet seated. The square
+       is the finished database; importing is what seats the last piece. -->
   <g>
-    <polygon class="tamber" points="44.0,76.0 90.4,76.0 67.2,99.2"/>
-    <polygon class="tgreen" points="44.0,76.0 67.2,99.2 44.0,122.4"/>
-    <polygon class="tred" points="90.4,76.0 90.4,99.2 78.8,87.6"/>
-    <polygon class="torange" points="67.2,99.2 78.8,87.6 90.4,99.2 78.8,110.8"/>
-    <polygon class="tcyan" points="67.2,99.2 78.8,110.8 55.6,110.8"/>
-    <polygon class="tmagenta" points="90.4,99.2 90.4,122.4 67.2,122.4"/>
-    <polygon class="tnavy" points="55.6,110.8 78.8,110.8 90.4,122.4 67.2,122.4"/>
-    <path class="drop" d="M67,50 V68 M60,62 L67,69.5 L74,62"/>
+    <polygon class="tamber" points="50.5,62.5 108.5,62.5 79.5,91.5"/>
+    <polygon class="tgreen" points="50.5,73.4 79.5,102.4 50.5,131.4"/>
+    <polygon class="tred" points="108.5,73.4 108.5,102.4 94.0,87.9"/>
+    <polygon class="torange" points="79.5,102.4 94.0,87.9 108.5,102.4 94.0,116.9"/>
+    <polygon class="tcyan" points="79.5,102.4 94.0,116.9 65.0,116.9"/>
+    <polygon class="tmagenta" points="108.5,102.4 108.5,131.4 79.5,131.4"/>
+    <polygon class="tnavy" points="50.5,131.4 65.0,116.9 94.0,116.9 79.5,131.4"/>
   </g>
 
-  <text class="wordmark" x="124" y="86">
-    <tspan class="ink">CUBRID</tspan><tspan class="brand"> ImportDB</tspan>
-  </text>
-  <text class="tag muted" x="126" y="118">Reload a whole database from an <tspan class="mono ink">unloaddb</tspan> dump in one</text>
-  <text class="tag muted" x="126" y="140">command &#8212; and never leave a foreign key the data breaks.</text>
+  <text class="wordmark" x="140" y="82"><tspan class="wm-parent ink">CUBRID</tspan><tspan class="brand" dx="-6"> ImportDB</tspan></text>
+  <text class="tag muted" x="140" y="114">Reload a whole database from an <tspan class="mono ink">unloaddb</tspan> dump in one</text>
+  <text class="tag muted" x="140" y="136">command &#8212; and never leave a foreign key the data breaks.</text>
 
-  <line class="rule" x1="590" y1="34" x2="590" y2="156"/>
-
-  <!-- filling a defined-but-empty target, then closing it and checking it -->
+  <!-- filling a defined-but-empty target, then closing it and checking it.
+       fill = data (every piece keeps its colour in both states); frame =
+       constraints (dashed while off, solid once rebuilt). -->
   <g>
-    <rect class="frame" x="618" y="38" width="52" height="52" rx="3"/>
-    <polygon class="pending" points="622.0,42.0 666.0,42.0 644.0,64.0"/>
-    <polygon class="tgreen" points="622.0,42.0 644.0,64.0 622.0,86.0"/>
-    <polygon class="pending" points="666.0,42.0 666.0,64.0 655.0,53.0"/>
-    <polygon class="pending" points="644.0,64.0 655.0,53.0 666.0,64.0 655.0,75.0"/>
-    <polygon class="tcyan" points="644.0,64.0 655.0,75.0 633.0,75.0"/>
-    <polygon class="tmagenta" points="666.0,64.0 666.0,86.0 644.0,86.0"/>
-    <polygon class="tnavy" points="633.0,75.0 655.0,75.0 666.0,86.0 644.0,86.0"/>
-    <text class="lab faint" x="644" y="112" text-anchor="middle">STRIP &#183; LOAD</text>
-    <text class="lab faint" x="644" y="128" text-anchor="middle" opacity="0.75">bare heaps</text>
+    <rect class="frame" x="626.0" y="51" width="60" height="60" rx="3"/>
+    <polygon class="tamber" points="634.0,56.2 678.0,56.2 656.0,78.2"/>
+    <polygon class="tgreen" points="631.2,59.0 653.2,81.0 631.2,103.0"/>
+    <polygon class="tred" points="680.4,57.6 680.4,79.6 669.4,68.6"/>
+    <polygon class="torange" points="658.8,81.0 669.8,70.0 680.8,81.0 669.8,92.0"/>
+    <polygon class="tcyan" points="656.0,83.8 667.0,94.8 645.0,94.8"/>
+    <polygon class="tmagenta" points="679.9,82.9 679.9,104.9 657.9,104.9"/>
+    <polygon class="tnavy" points="633.1,105.6 644.1,94.6 666.1,94.6 655.1,105.6"/>
+    <text class="lab faint" x="656" y="129" text-anchor="middle">STRIP &#183; LOAD</text>
+    <text class="lab2 faint" x="656" y="144" text-anchor="middle">bare heaps</text>
 
-    <path class="arrow" d="M700,64 H726 M720,59 L726,64 L720,69"/>
+    <path class="arrow" d="M690,81 H738 M732,77 L738,81 L732,85"/>
 
-    <rect class="frame-on" x="784" y="38" width="52" height="52" rx="3"/>
-    <polygon class="tamber" points="788.0,42.0 832.0,42.0 810.0,64.0"/>
-    <polygon class="tgreen" points="788.0,42.0 810.0,64.0 788.0,86.0"/>
-    <polygon class="tred" points="832.0,42.0 832.0,64.0 821.0,53.0"/>
-    <polygon class="torange" points="810.0,64.0 821.0,53.0 832.0,64.0 821.0,75.0"/>
-    <polygon class="tcyan" points="810.0,64.0 821.0,75.0 799.0,75.0"/>
-    <polygon class="tmagenta" points="832.0,64.0 832.0,86.0 810.0,86.0"/>
-    <polygon class="tnavy" points="799.0,75.0 821.0,75.0 832.0,86.0 810.0,86.0"/>
-    <g transform="translate(828,30)">
-      <circle class="plate" cx="10" cy="10" r="10.5"/>
+    <rect class="frame-on" x="742.0" y="51" width="60" height="60" rx="3"/>
+    <polygon class="tamber" points="750.0,59.0 794.0,59.0 772.0,81.0"/>
+    <polygon class="tgreen" points="750.0,59.0 772.0,81.0 750.0,103.0"/>
+    <polygon class="tred" points="794.0,59.0 794.0,81.0 783.0,70.0"/>
+    <polygon class="torange" points="772.0,81.0 783.0,70.0 794.0,81.0 783.0,92.0"/>
+    <polygon class="tcyan" points="772.0,81.0 783.0,92.0 761.0,92.0"/>
+    <polygon class="tmagenta" points="794.0,81.0 794.0,103.0 772.0,103.0"/>
+    <polygon class="tnavy" points="750.0,103.0 761.0,92.0 783.0,92.0 772.0,103.0"/>
+    <g transform="translate(801.0,32.0)">
+      <circle class="badgebg" cx="10" cy="10" r="10.5"/>
       <path class="check" d="M5,10.2 L8.4,13.6 L15,6.6"/>
     </g>
-    <text class="lab good" x="810" y="112" text-anchor="middle">REBUILD &#183; VERIFY</text>
-    <text class="lab faint" x="810" y="128" text-anchor="middle" opacity="0.75">every FK checked</text>
+    <text class="lab good" x="772" y="129" text-anchor="middle">REBUILD &#183; VERIFY</text>
+    <text class="lab2 faint" x="772" y="144" text-anchor="middle">every FK checked</text>
   </g>
 </svg>
