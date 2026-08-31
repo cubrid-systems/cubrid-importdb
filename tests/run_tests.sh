@@ -20,7 +20,7 @@ IT_SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
 . "$IT_SELF_DIR/lib/common.sh"
 
-IT_ALL_CASES="roundtrip ordering fkcycle fkviolation dryrun degree resume refusals compat perf"
+IT_ALL_CASES="roundtrip types ordering fkcycle fkviolation dryrun degree resume refusals compat perf"
 
 usage () {
   sed -n '2,16p' "$IT_SELF_DIR/run_tests.sh" | sed 's/^# \{0,1\}//'

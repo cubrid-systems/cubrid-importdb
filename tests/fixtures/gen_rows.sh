@@ -123,6 +123,39 @@ wide)
     print "COMMIT;";
   }'
   ;;
+types)
+  # Values are literal rather than generated: each one is here because it is a
+  # formatting edge for the family in its table, and a loop would hide that.
+  # NCHAR needs an N'..' literal; a plain string is refused with "Cannot coerce".
+  cat <<'ROWS'
+INSERT INTO ty_num VALUES (1, -32768, 9223372036854775807, 123456789.123456, 12345678901234567890123456789012345678, 1.5, 2.25, 1234.56);
+INSERT INTO ty_num VALUES (2, 32767, -9223372036854775808, -0.000001, 0, -1.5, -2.25, -0.01);
+INSERT INTO ty_num VALUES (3, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+INSERT INTO ty_str VALUES (1, 'abcde', 'plain ascii', N'nchr', N'nchar varying', 'utf8bin', 'iso88591', '한글 문자열 테스트');
+INSERT INTO ty_str VALUES (2, 'x    ', 'quote''s and \ backslash', N'a', N'b', 'c', 'd', '이모지 없는 다국어');
+INSERT INTO ty_str VALUES (3, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+INSERT INTO ty_bit VALUES (1, B'1010101010101010', B'1111000011110000');
+INSERT INTO ty_bit VALUES (2, NULL, NULL);
+INSERT INTO ty_time VALUES (1, DATE'2020-02-29', TIME'23:59:59', DATETIME'2020-02-29 23:59:59.999', TIMESTAMP'2020-02-29 23:59:59', TIMESTAMPTZ'2020-02-29 23:59:59 Asia/Seoul', DATETIMETZ'2020-02-29 23:59:59.999 Asia/Seoul', TIMESTAMPLTZ'2020-02-29 23:59:59', DATETIMELTZ'2020-02-29 23:59:59.999');
+INSERT INTO ty_time VALUES (2, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+INSERT INTO ty_enum VALUES (1, 'small'), (2, 'large'), (3, NULL);
+INSERT INTO ty_json VALUES (1, '{"a": 1, "b": [1,2,3], "c": {"d": "e"}}');
+INSERT INTO ty_json VALUES (2, '[]');
+INSERT INTO ty_json VALUES (3, NULL);
+INSERT INTO ty_lob VALUES (1, BIT_TO_BLOB(B'11110000'), CHAR_TO_CLOB('clob content here'));
+INSERT INTO ty_lob VALUES (2, NULL, NULL);
+INSERT INTO ty_coll VALUES (1, {1,2,3}, {'a','b','a'}, {3,1,2});
+INSERT INTO ty_coll VALUES (2, {}, {}, {});
+INSERT INTO ty_wide VALUES (1, RPAD('cubrid', 978670, '1234567800'));
+INSERT INTO ty_wide VALUES (2, 'short');
+INSERT INTO ty_ai (v) VALUES (10), (20), (30);
+INSERT INTO ty_cmt VALUES (1, 1);
+INSERT INTO ty_hash VALUES (1,1),(2,2),(3,3),(4,4),(5,5),(6,6);
+INSERT INTO ty_list VALUES (1,'a'),(2,'b'),(3,'a'),(4,'b');
+INSERT INTO ty_fidx VALUES (1, 5, 'AbC'), (2, 50, 'dEf');
+COMMIT;
+ROWS
+  ;;
 *)
   echo "gen_rows.sh: unknown fixture '$fixture'" >&2
   exit 1

@@ -53,6 +53,7 @@ stopped or deleted.
 
 | case | what it proves |
 |---|---|
+| `types` | Every column-type family survives the round trip. One table per family, so a failure names the family: ENUM, JSON, BLOB/CLOB, BIT, SET/MULTISET/SEQUENCE, the four zoned date/time types, MONETARY, NCHAR, two collations in one row, non-ASCII text, HASH and LIST partitioning, a filtered index, a function index, and one VARCHAR value larger than `unloaddb`'s internal buffer — the shape that came back corrupted in CBRD-26282. Compared exactly as `roundtrip` compares: byte-identical catalog fingerprint, per-class row counts and content checksums. Then 25 of the families are asserted by name, so a diff-only failure cannot hide which one was lost. |
 | `roundtrip` | The import reproduces the source. A fixture carrying a PK, a single-column UNIQUE, NOT NULL, DEFAULT, an FK, a plain index, a composite index with a DESC key, a multi-column UNIQUE index, a REVERSE index, a keyless table, an advanced serial and a trigger is compared against its import two ways: a tagged catalog fingerprint (`db_class`, `db_attribute`, `db_index`, `db_index_key`, `db_direct_super_class`, `db_partition`, `db_serial`, `db_trigger`) that must be byte-identical, and per-class row counts plus order-independent content checksums (rows sorted, then hashed — the physical load order differs). The counts are checked twice, once derived from the rows that were hashed and once asked of the server with `count(*)`, so a checksum that agrees for the wrong reason still fails. Also: the trigger is defined last, so it must not have fired on the bulk-loaded rows. |
 | `ordering` | A schema with three levels of FK edges below the root, one inheritance edge and a RANGE-partitioned table imports cleanly, and the level sets the tool *prints* are topologically valid — every parent strictly below its child, every superclass strictly below its subclass. The check parses the printed graph and the printed plan, which is what an operator reads. |
 | `fkcycle` | Two tables that reference each other import in one command. importdb strips the constraints before the data phase and defines them again afterwards, so both FKs are present at the end and no FK is withheld. |
@@ -73,8 +74,8 @@ HA. The guard itself is in `src/import_db.cpp` (`HA_DISABLED ()` /
 `--allow-ha`), and the `m5 ha51b-docker` fixture referenced from
 `src/import_define.cpp` is where it was measured.
 
-**Two upstream properties the cases pin down rather than test.** Both are
-`unloaddb`/engine behaviour, not importdb's, and both were found by this suite:
+**Three upstream properties the cases pin down rather than test.** All three are
+`unloaddb`/engine behaviour, not importdb's, and each was found by this suite:
 
 * `unloaddb` writes a serial's **current** value as its `START WITH`, so an
   imported serial's `db_serial.start_val` equals the source's `current_val`.
@@ -85,6 +86,13 @@ HA. The guard itself is in `src/import_db.cpp` (`HA_DISABLED ()` /
   defined, and exits 0 — the constraint ends up present but unsatisfied, with no
   error anywhere. That is the gap `fkviolation` shows importdb closing: the
   set-based anti-join before the FK is defined.
+* An `AUTO_INCREMENT` serial's `current_val` is not comparable between a
+  standalone reader and a client-server one — the cached allocation differs — and
+  the `db_serial` **view** omits AI serials entirely, which is why importdb reads
+  `_db_serial` at all. `types` therefore asserts the invariant an operator
+  actually depends on, not an equality: the serial's current value is at or above
+  the largest id in the loaded data, so it cannot hand out one that already
+  exists.
 
 ## Layout
 
@@ -96,6 +104,7 @@ tests/
 │   └── fingerprint.sql      the catalog fingerprint query
 ├── fixtures/
 │   ├── roundtrip.sql        every constraint / index / type family
+│   ├── types.sql            every column-type family, one table each
 │   ├── ordering.sql         FK chain + inheritance + partitions
 │   ├── fkcycle.sql          two mutually-referencing tables
 │   ├── fkviolation.sql      parent + two children (orphans injected into the dump)
