@@ -85,6 +85,12 @@ Off automatically when stdout is not a terminal.
 **Inter-table parallelism.** `--degree=N` runs N loaders concurrently, one per
 object file; it needs a `--datafile-per-class` dump to have anything to spread over.
 
+**Reads a dump from an older engine.** 10.2 and newer. A pre-11.5 `unloaddb`
+names the catalog *views* as `CALL ... ON CLASS` targets, and 11.5 made those
+views distinct from the classes that carry the methods; importdb rewrites the
+three affected targets and says so, the way `loaddb` does. Without it every
+10.2 dump of a database that owns a serial is refused.
+
 **Resume.** A killed import re-run with the same command continues from its
 manifest instead of starting over.
 
@@ -186,10 +192,21 @@ importdb: 'shoptgt' import COMPLETE -- 5 class(es) done, 0 skipped, 0 pending, 0
 ```
 
 Because everything the dump defines is replayed from the dump's own DDL, that
-includes the parts a reload is easy to lose: **users and grants come back too**
-(`unloaddb` writes an `add_user` call and the `GRANT` statements into
-`<prefix>_schema`). Note that `unloaddb` does *not* carry passwords — a
-re-created user has an empty one.
+includes the parts a reload is easy to lose: **users, their passwords and their
+grants all come back** (`unloaddb` writes an `add_user` call, a
+`set_password_encoded_sha1` call and the `GRANT` statements into
+`<prefix>_schema`). The password is easy to believe lost, because the `add_user`
+line carries an empty one:
+
+```
+call [add_user]('LG_WRITER', '') on class [db_root] to [auser];
+call [set_password_encoded_sha1]('DE05ABA8...CAAA') on [auser];
+```
+
+The hash arrives in the *next* statement. Measured both ways in
+`tests/run_tests.sh crossversion`, which logs in as the restored account with the
+password set on the old engine, reads what it was granted, and checks that a
+wrong password is still refused.
 
 ### The live display
 
@@ -276,6 +293,53 @@ the dump. `--continue` attempts every edge instead of stopping at the first.
 
 `demo/run_demo.sh` runs both paths side by side — see [`demo/`](demo/README.md).
 
+## Reading an older engine's dump
+
+A reload is usually a *migration*: the dump is written by the version you are
+leaving and read by the version you are arriving at. importdb reads dumps from
+**CUBRID 10.2 and newer**, and the reason it can is mostly structural — the
+graph, the plan, the strip, the rebuild and the FK definition are all driven by
+a **catalog read of the target** (`src/import_graph.cpp`), not by parsing the
+dump's DDL. Whatever version wrote the schema file, once the engine has executed
+it the constraint set importdb works from is the current engine's own catalog.
+
+Two things are not structural, and one of them needed code:
+
+**The dump's DDL still has to parse.** It is fed to the engine's own parser, so
+importdb inherits exactly `loaddb -s`'s tolerance for old syntax — no more, no
+less. One place that was not enough: a pre-11.5 `unloaddb` writes
+
+```
+call [change_serial_owner] ('lg_seq', 'DBA') on class [db_serial];
+```
+
+and in 11.5 `db_serial` became a *view*, distinct from the `_db_serial` class
+that carries the method. `loaddb` rewrites the target in the parse tree
+(`ldr_compat_call_target`); the parse tree is not on the installed surface, so
+importdb rewrites the same three targets — `db_user`, `db_serial`,
+`db_authorization` — in the schema buffer before it is parsed, and prints the
+count. `find_user` and `login` are left alone, because the `db_user` view kept
+those. Every 10.2 dump of a database that owns a serial carries that statement,
+so without the rewrite the whole class of dumps was refused at the first serial.
+
+**The object data is `loaddb`'s to parse.** The data phase execs
+`cub_admin loaddb -C` per object file, so whatever that build accepts, importdb
+accepts. This is not a layer that can fix a `loaddb` bug, and it does not claim
+to.
+
+**Why 10.2 and not older.** The two hard 9.x → 10.x breaks are below that floor
+and are not a loader's to fix: default password hashing changed from SHA1 to SHA2
+in 10.0 (CBRD-20659), and the `reuse_oid` default changed in 10.0 (CBRD-23708).
+Both want a migration step before any loader runs.
+
+`tests/run_tests.sh crossversion` is the evidence, and it is not a smoke test.
+It builds the fixtures on a real 10.2 install, unloads them with *that* engine's
+`unloaddb`, imports the result, and then makes three byte-identical comparisons —
+the data against the 10.2 source, and the catalog and the grant set against a
+target built from a *current* dump of the same fixtures. Measured on 10.2.18
+against 11.5.0.2498: 16 classes, 91 rows, one rewritten target, identical on all
+three.
+
 ## Performance
 
 Measured against a **parallelism-matched** `loaddb` baseline: the baseline runs its
@@ -330,9 +394,11 @@ Two honest caveats:
 
 ## Requirements
 
-- **CUBRID 11.5 or newer.** importdb reads the `_db_serial` system class to find
-  AUTO_INCREMENT serials (the `db_serial` view omits them), and that read is
-  rejected on 11.4 and earlier. This is not enforced by a version check: on an
+- **CUBRID 11.5 or newer** — for the engine importdb *runs against*. The dump it
+  *reads* may come from 10.2 or newer; see
+  [Reading an older engine's dump](#reading-an-older-engines-dump). importdb reads
+  the `_db_serial` system class to find AUTO_INCREMENT serials (the `db_serial`
+  view omits them), and that read is rejected on 11.4 and earlier. This is not enforced by a version check: on an
   older engine the `_db_serial` probe in [`contract/`](contract/README.md) fails,
   and an actual import fails in the graph phase.
 - Linux, a C++17 compiler, and CMake 3.16+ for importdb itself.
@@ -453,15 +519,20 @@ you cannot reload a database on top of itself.
 
 - **It does not replace `loaddb`.** Single-file, single-table loads are what
   `loaddb` is for, and it is untouched.
-- **It does not read foreign dumps.** CUBRID `unloaddb` output only.
+- **It does not read foreign dumps.** CUBRID `unloaddb` output only, from 10.2
+  or newer. A 9.x dump is not refused by a version check — it will fail wherever
+  its DDL or its object data stops parsing, which is the same place `loaddb`
+  fails.
 - **It is not an online load.** The target must be empty of user classes; this is
   a reload, not an ingest.
 - **It does not carry object-valued (OID) columns.** CS-mode loading handles
   value-typed data; classes with object columns are rejected, or skipped and
   reported with `--skip-object-classes`.
-- **It does not restore user passwords.** Users and grants come back, because
-  `unloaddb` writes them into the schema file — but `unloaddb` emits every user
-  with an empty password, so re-created users must have theirs set again.
+- **It does not carry anything `unloaddb` left out of the dump.** What is in the
+  dump is replayed, and that is more than it looks: users, their password hashes
+  and their grants all survive, verified by logging in as a restored account in
+  the `crossversion` case. Anything `unloaddb` does not write — a stored
+  procedure, say — importdb cannot invent.
 - **It does not replicate to an HA standby.** The bare-heap load produces no row
   replication, so an `ha_mode=on` target is refused unless you pass `--allow-ha`
   and rebuild the standby from a backup afterwards.
@@ -474,15 +545,23 @@ tests/run_tests.sh                           # the functional suite
 tests/run_tests.sh -k resume fkviolation     # one or more cases, keep the scratch dir
 bash demo/run_demo.sh build/cubrid-importdb  # the demo, four scenarios
 ctest --test-dir build --output-on-failure   # contract + smoke + functional
+
+# the cross-version lane: a second, OLDER install to write the dump with
+tools/fetch_engine.sh --release 10.2_latest --install-only engine102
+IT_SRC_CUBRID=$PWD/engine102/install tests/run_tests.sh crossversion
 ```
 
 `ctest` includes the performance case, which builds a 393,000-row fixture and runs
-paired imports at two degrees — budget half an hour for it, or run
-`tests/run_tests.sh` with the case names you want instead.
+paired imports at two degrees — budget an hour for the lot, or run
+`tests/run_tests.sh` with the case names you want instead. Without
+`IT_SRC_CUBRID` the `crossversion` case prints a `SKIP` with that reason; every
+other case needs only the one install.
 
-- [`tests/`](tests/README.md) — 9 cases, 202 assertions: round-trip fidelity,
-  dependency ordering, FK cycles, FK violations, `--dry-run`, `--degree`, resume
-  after `SIGKILL`, refusals, and the performance comparison.
+- [`tests/`](tests/README.md) — 13 cases, 238 assertions outside the performance
+  case (which adds its own per measured pair): round-trip fidelity, every
+  column-type family, dependency ordering, FK cycles, FK violations,
+  `--dry-run`, `--degree`, resume after `SIGKILL`, refusals, a damaged dump, the
+  pre-11.5 compatibility rewrite, and a 10.2 dump imported into 11.5.
 - [`demo/`](demo/README.md) — 4 scenarios, 34 assertions: the `loaddb` contrast,
   the plan, the FK violation, and what parallelism actually depends on.
 - [`contract/`](contract/README.md) — what this repo depends on from CUBRID,

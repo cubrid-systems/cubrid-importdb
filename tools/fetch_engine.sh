@@ -13,27 +13,37 @@
 #   fetch_engine.sh --nightly-version <V> <dest>  a specific nightly, e.g. 11.5.0.2494-4b6ae5c
 #   fetch_engine.sh --release <NAME> <dest>       a release area, e.g. 11.4_latest
 #
+#   --install-only                                skip the source tarball
+#
 # Leaves <dest>/src, <dest>/install, and <dest>/engine.env (VERSION, COMMIT,
 # SOURCE_URL) behind. Skips the download when <dest>/dl already holds both
 # tarballs, so a CI cache hit costs nothing.
+#
+# --install-only leaves no <dest>/src and halves the download. It is for an
+# engine this repo does not COMPILE against but only RUNS: the crossversion test
+# lane needs an older install to write a dump with (its createdb, csql -S and
+# unloaddb -S), and never needs that engine's headers. Do not use it for the
+# engine the utility is built against -- that one needs the source tree for its
+# generated headers.
 #
 # Exit: 0 ok, 77 could not fetch (network, missing artifact) -- CI reads 77 as SKIP.
 set -uo pipefail
 
 FTP_BASE="${FTP_BASE:-https://ftp.cubrid.org/CUBRID_Engine}"
-MODE=""; ARG=""; DEST=""
+MODE=""; ARG=""; DEST=""; INSTALL_ONLY=0
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --nightly)         MODE=nightly; ARG="${2:-11.5}"; shift 2 ;;
     --nightly-version) MODE=nightly_version; ARG="${2:?}"; shift 2 ;;
     --release)         MODE=release; ARG="${2:?}"; shift 2 ;;
+    --install-only)    INSTALL_ONLY=1; shift ;;
     -*) echo "fetch_engine: unknown option '$1'" >&2; exit 77 ;;
     *) DEST="$1"; shift ;;
   esac
 done
 [ -n "$MODE" ] && [ -n "$DEST" ] || {
-  sed -n '3,20p' "$0" >&2
+  sed -n '3,29p' "$0" >&2
   exit 77
 }
 
@@ -67,16 +77,28 @@ case "$MODE" in
     ;;
 esac
 
+# One list, so the download, the checksum pass and the extract cannot disagree
+# about which halves of the pair are in play.
+WANTED="$SRC_TGZ:src.tar.gz $INS_TGZ:install.tar.gz"
+if [ "$INSTALL_ONLY" = "1" ]; then
+  WANTED="$INS_TGZ:install.tar.gz"
+fi
+
 say "version $V"
 say "  from   $DIR"
+[ "$INSTALL_ONLY" = "1" ] && say "  install only -- no source tarball"
 
 mkdir -p "$DEST/dl" || exit 77
 
 # ---- download (skipped when both tarballs are already there, i.e. a cache hit)
-if [ -s "$DEST/dl/src.tar.gz" ] && [ -s "$DEST/dl/install.tar.gz" ]; then
-  say "both tarballs already present -- skipping the download"
+have_all=1
+for pair in $WANTED; do
+  [ -s "$DEST/dl/${pair##*:}" ] || have_all=0
+done
+if [ "$have_all" = "1" ]; then
+  say "every wanted tarball is already present -- skipping the download"
 else
-  for pair in "$SRC_TGZ:src.tar.gz" "$INS_TGZ:install.tar.gz"; do
+  for pair in $WANTED; do
     remote="${pair%%:*}"; local="${pair##*:}"
     say "downloading $remote"
     if ! curl -sS --fail --max-time 1800 -o "$DEST/dl/$local" "$DIR/$remote"; then
@@ -90,7 +112,7 @@ fi
 # ---- verify against the directory's own checksums when it publishes them
 if [ -s "$DEST/dl/hash.md5" ]; then
   fail=0
-  for pair in "$SRC_TGZ:src.tar.gz" "$INS_TGZ:install.tar.gz"; do
+  for pair in $WANTED; do
     remote="${pair%%:*}"; local="${pair##*:}"
     # the drop writes "<md5> *<filename>" (md5sum's binary marker)
     want=$(grep -E "[[:space:]][*]?${remote}$" "$DEST/dl/hash.md5" | awk '{print $1}' | head -1)
@@ -113,12 +135,18 @@ fi
 
 # ---- extract
 rm -rf "$DEST/src" "$DEST/install"
-mkdir -p "$DEST/src" "$DEST/install" || exit 77
+mkdir -p "$DEST/install" || exit 77
 say "extracting"
-tar xzf "$DEST/dl/src.tar.gz"     -C "$DEST/src"     --strip-components=1 || exit 77
+if [ "$INSTALL_ONLY" != "1" ]; then
+  mkdir -p "$DEST/src" || exit 77
+  tar xzf "$DEST/dl/src.tar.gz" -C "$DEST/src" --strip-components=1 || exit 77
+  [ -f "$DEST/src/src/executables/util_support.c" ] || { say "extracted source does not look like a CUBRID tree"; exit 77; }
+fi
 tar xzf "$DEST/dl/install.tar.gz" -C "$DEST/install" --strip-components=1 || exit 77
-[ -f "$DEST/src/src/executables/util_support.c" ] || { say "extracted source does not look like a CUBRID tree"; exit 77; }
 [ -f "$DEST/install/lib/libcubridcs.so" ] || { say "extracted install has no libcubridcs.so"; exit 77; }
+# An install that cannot answer `cubrid --version` is not usable, whatever the
+# tarball looked like. Reported here rather than at first use.
+[ -x "$DEST/install/bin/cubrid" ] || { say "extracted install has no bin/cubrid"; exit 77; }
 
 {
   echo "VERSION=$V"
@@ -126,6 +154,10 @@ tar xzf "$DEST/dl/install.tar.gz" -C "$DEST/install" --strip-components=1 || exi
   echo "SOURCE_URL=$DIR"
 } > "$DEST/engine.env"
 
-say "ready: src=$DEST/src install=$DEST/install"
+if [ "$INSTALL_ONLY" = "1" ]; then
+  say "ready: install=$DEST/install (no source tarball was fetched)"
+else
+  say "ready: src=$DEST/src install=$DEST/install"
+fi
 [ -n "$COMMIT" ] && say "engine commit $COMMIT"
 exit 0

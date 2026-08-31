@@ -24,11 +24,30 @@ tests/run_tests.sh -l                    # list the cases
 neither, the runner looks for `build/cubrid-importdb` and then for
 `cubrid-importdb` on `$PATH`.
 
-Through CTest, which is how CI runs it:
+One case needs a **second, older** CUBRID install, because it is the only one
+that can see a cross-version break at all — every other case unloads and
+imports with the same install:
+
+```sh
+tools/fetch_engine.sh --release 10.2_latest --install-only engine102
+IT_SRC_CUBRID=$PWD/engine102/install tests/run_tests.sh crossversion
+```
+
+Without `IT_SRC_CUBRID` the `crossversion` case prints a `SKIP` with that
+reason and the suite stays green. The old engine is used **standalone only** —
+`createdb`, `csql -S`, `unloaddb -S` — so the two installs need no port
+separation, no second `cub_master`, and never see each other. That is why the
+lane costs one environment variable instead of a second harness.
+
+Through CTest, which runs every case including `perf`:
 
 ```sh
 ctest --test-dir build -R functional --output-on-failure
 ```
+
+CI calls the runner directly instead, with `perf` left off the list: its verdict
+is a ratio measured on the host it ran on, and a shared runner is the worst place
+both to measure that and to trust the number.
 
 Exit codes are the same contract `tools/smoke.sh` uses: **0** everything passed,
 **1** something failed, **77** the environment cannot run the suite at all — no
@@ -49,6 +68,12 @@ directory and prints the path.
 Databases are named `it_<case>_<role>`. Nothing the suite did not create is ever
 stopped or deleted.
 
+A cross-version case adds a second `CUBRID_DATABASES` under the same case
+directory for the old engine's databases, and its own directory of library
+symlinks for the sonames that engine still wants. Those databases are dropped
+with the engine that made them — the current engine would refuse the volume
+format — and everything else the case directory holds goes with the `rm -rf`.
+
 ## What each case covers
 
 | case | what it proves |
@@ -64,6 +89,7 @@ stopped or deleted.
 | `refusals` | The things that must be refusals rather than surprises: no arguments, a missing positional, a missing dump directory, a directory with no dump in it, a dump with a schema file but no object roster, `--exceptions-table` (reserved), a non-DBA user, and a non-empty target. Each asserts the non-zero exit *and* the specific diagnostic, so a refusal that starts happening for a different reason still fails. |
 | `corrupt` | A damaged dump, six ways, each from a pristine copy of one good dump. **Caught:** a value of the wrong data type (the object file is named and the loader's own failed-object count is surfaced; nothing is committed), an object file of random bytes, a schema file that will not parse (file *and* line named, and the all-or-nothing definition leaves the target with zero classes and no manifest), and a manifest that records no phase (refused, and the file is left byte-identical rather than overwritten). **Not caught, and asserted as such:** a truncated object file loads what it can and reports `COMPLETE` at exit 0, and a deleted per-class object file leaves that class silently empty at exit 0. See the note below — the cause is upstream and the same for both. |
 | `compat` | The pre-11.5 `CALL ... ON CLASS` rewrite, and what it must not touch. Its dump is hand-written and checked in under `fixtures/dumps/`, so this guard runs on **every** host — unlike `crossversion`, which needs a real old install. The fixture puts every string the scanner looks for somewhere it must not act: inside a `DEFAULT`'s string literal, after a `--` marker *inside* that literal, and inside a loaded row. It also carries the two exempt `find_user` statements and the one `change_serial_owner` that is not exempt, so the reported rewrite count — **exactly 1** — is the assertion: 3 would mean the exemption was lost, more would mean the scanner is matching inside literals. Both literals are then read back verbatim, and the schema file on disk is checked unmodified. |
+| `crossversion` | A dump written by an **older** engine imports correctly. The `types` and `legacy` fixtures are built on the old engine, unloaded with *its* `unloaddb`, and imported by the binary under test; a reference arm builds the same two fixtures on the current engine and imports its dump the same way. Three comparisons, none of them loosened for being cross-version: the **data** (old source vs target, per-class counts and content checksums, byte-identical), the **catalog** (target-from-old-dump vs target-from-current-dump, through the same strict fingerprint `roundtrip` uses, byte-identical), and the **auth** set (users and their grants on the dump's own classes, byte-identical). The reference arm is what makes the catalog half possible at all: both sides are current-version catalogs, so no version-neutral column subset has to be invented. It also pins the two shapes that make the dump old — `on class [db_serial]` and `call [change_owner]` — and asserts the compat rewrite fired **exactly once**, since the same dump carries two `find_user ... on class [db_user]` statements that must *not* be rewritten. |
 
 ### What is not covered here, and why
 
@@ -85,6 +111,13 @@ importdb alike. Closing it needs the count in the dump, which is an `unloaddb`
 change. Measured: halving one 41-row object file imported 20 rows and called it
 complete. The case asserts the short count, so if upstream ever does add a
 check, this test fails and someone updates it deliberately.
+
+**Cross-version coverage stops at 10.2, deliberately.** The two hard 9.x → 10.x
+breaks are below that floor and are not a loader's to fix: default password
+hashing changed from SHA1 to SHA2 in 10.0 (CBRD-20659) and the `reuse_oid`
+default changed in 10.0 (CBRD-23708). Both need a migration step before any
+loader runs, so a lane that started at 9.3 would be testing the migration step,
+not the import.
 
 **Three upstream properties the cases pin down rather than test.** All three are
 `unloaddb`/engine behaviour, not importdb's, and each was found by this suite:
@@ -123,6 +156,7 @@ tests/
 │   ├── fkcycle.sql          two mutually-referencing tables
 │   ├── fkviolation.sql      parent + two children (orphans injected into the dump)
 │   ├── wide.sql             parent + four children, for degree and resume
+│   ├── dumps/               a hand-written pre-11.5 dump, for the compat guard
 │   └── gen_rows.sh          row data, generated rather than committed
 └── cases/<name>.sh          one file per case
 ```
