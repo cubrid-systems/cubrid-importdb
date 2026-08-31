@@ -1,0 +1,38 @@
+-- A hand-written schema file in the shape a PRE-11.5 unloaddb produces, kept as
+-- a fixture rather than generated, because its whole job is to put the strings
+-- the compat rewrite scans for in places where it must NOT act:
+--
+--   * find_user / login ON CLASS db_user   -- exempt: the view kept those
+--   * change_serial_owner ON CLASS db_serial -- the one target to rewrite
+--   * the same text inside a string literal, and after a -- comment marker
+--     inside that literal
+--   * the same text inside a block comment
+--
+-- Read by tests/cases/compat.sh. Nothing here needs an old engine to produce,
+-- which is the point: the guard runs on every host, with or without one.
+call [find_user]('PUBLIC') on class [db_user] to [g_public];
+call [find_user]('DBA') on class [db_user] to [auser];
+create serial [cp_seq]
+	 start with 7
+	 increment by 1
+	 minvalue 7
+	 maxvalue 99999999999999999999999999999999999999
+	 nocycle
+	 nocache
+;
+call [change_serial_owner] ('cp_seq', 'DBA') on class [db_serial];
+
+CREATE CLASS [cp_t] COLLATE utf8_bin;
+call [change_owner]('cp_t', 'DBA') on class [db_root];
+
+ALTER CLASS [cp_t] ADD ATTRIBUTE
+       [id] integer NOT NULL,
+       [note] character varying(200) DEFAULT _utf8'call [x] on class [db_serial] -- and on class [db_user]';
+
+/* A block comment, because an operator editing a schema file by hand before
+   loading it is a documented habit -- and it says on class [db_serial] and
+   on class [db_user] where the scanner must not act. */
+ALTER CLASS [cp_t] ADD ATTRIBUTE
+       CONSTRAINT [pk_cp_t_id] PRIMARY KEY([id]);
+
+COMMIT WORK;

@@ -93,6 +93,7 @@ namespace
     { 80, "importdb: '--progress=%1$s' is not a valid value; use auto, always or never.\n" },
     { 78, "importdb: '%1$s' is an HA %2$s and --allow-ha was given. The data phase will NOT replicate; the standby will not receive these rows.\n" },
     { 79, "importdb: the standby of '%1$s' did NOT receive this import. importdb loaded into bare heaps, so no row replication record was written; the schema replicated but the rows did not. Rebuild the standby from a backup of this database before failing over to it.\n" },
+    { 81, "importdb: rewrote %1$d pre-11.5 catalog target(s) in %2$s (ON CLASS db_user/db_serial/db_authorization -> the underlying _db_* class); the dump was written by CUBRID 11.4 or earlier.\n" },
   };
 }
 
