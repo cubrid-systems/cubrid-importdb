@@ -22,8 +22,8 @@ SRC=it_deg_src
 ROWS=2000
 
 db_create "$SRC" 128M 64M || die "cannot create $SRC"
-fixture_apply "$SRC" wide || die "fixture DDL failed (see $WORK/wide.ddl.log)"
-fixture_rows "$SRC" wide "$ROWS" || die "fixture rows failed (see $WORK/wide.rows.log)"
+fixture_apply "$SRC" wide || die "fixture DDL failed"
+fixture_rows "$SRC" wide "$ROWS" || die "fixture rows failed"
 catalog_fp sa "$SRC" "$WORK/src.catalog"
 data_fp sa "$SRC" "$WORK/src.data"
 unload_dump "$SRC" "$WORK/dump" --datafile-per-class || die "unloaddb failed"

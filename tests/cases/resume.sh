@@ -27,8 +27,8 @@ BASE=it_res_base
 ROWS=20000
 
 db_create "$SRC" 256M 128M || die "cannot create $SRC"
-fixture_apply "$SRC" wide || die "fixture DDL failed (see $WORK/wide.ddl.log)"
-fixture_rows "$SRC" wide "$ROWS" || die "fixture rows failed (see $WORK/wide.rows.log)"
+fixture_apply "$SRC" wide || die "fixture DDL failed"
+fixture_rows "$SRC" wide "$ROWS" || die "fixture rows failed"
 unload_dump "$SRC" "$WORK/dump" --datafile-per-class || die "unloaddb failed"
 
 # the uninterrupted baseline every resumed run is measured against

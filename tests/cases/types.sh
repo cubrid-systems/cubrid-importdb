@@ -27,8 +27,8 @@ TGT=it_ty_tgt
 DUMP="$WORK/dump"
 
 db_create "$SRC" || die "cannot create $SRC"
-fixture_apply "$SRC" types || die "fixture DDL failed (see $WORK/types.ddl.log)"
-fixture_rows "$SRC" types || die "fixture rows failed (see $WORK/types.rows.log)"
+fixture_apply "$SRC" types || die "fixture DDL failed"
+fixture_rows "$SRC" types || die "fixture rows failed"
 
 catalog_fp sa "$SRC" "$WORK/src.catalog"
 data_fp sa "$SRC" "$WORK/src.data"

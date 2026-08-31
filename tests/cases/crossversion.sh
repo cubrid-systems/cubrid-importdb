@@ -73,14 +73,14 @@ RDUMP="$WORK/dump_new"
 
 src_db_create "$OLD" || die "cannot create $OLD with the source engine"
 for fx in types legacy; do
-  src_fixture_apply "$OLD" "$fx" || die "source fixture DDL '$fx' failed (see $WORK/src.$fx.ddl.log)"
+  on_src fixture_apply "$OLD" "$fx" || die "source fixture DDL '$fx' failed"
 done
 for fx in types legacy; do
-  src_fixture_rows "$OLD" "$fx" || die "source fixture rows '$fx' failed (see $WORK/src.$fx.rows.log)"
+  on_src fixture_rows "$OLD" "$fx" || die "source fixture rows '$fx' failed"
 done
 
-src_data_fp "$OLD" "$WORK/old.data"
-src_unload_dump "$OLD" "$XDUMP" || die "source-engine unloaddb failed"
+on_src data_fp sa "$OLD" "$WORK/old.data"
+on_src unload_dump "$OLD" "$XDUMP" || die "source-engine unloaddb failed"
 
 OLD_SCHEMA="$XDUMP/${OLD}_schema"
 assert_file "the old engine wrote a schema file" "$OLD_SCHEMA"
@@ -98,10 +98,10 @@ assert_grep "and creates its classes unqualified, then moves the owner" \
 
 db_create "$NEW" || die "cannot create $NEW"
 for fx in types legacy; do
-  fixture_apply "$NEW" "$fx" || die "fixture DDL '$fx' failed (see $WORK/$fx.ddl.log)"
+  fixture_apply "$NEW" "$fx" || die "fixture DDL '$fx' failed"
 done
 for fx in types legacy; do
-  fixture_rows "$NEW" "$fx" || die "fixture rows '$fx' failed (see $WORK/$fx.rows.log)"
+  fixture_rows "$NEW" "$fx" || die "fixture rows '$fx' failed"
 done
 unload_dump "$NEW" "$RDUMP" || die "unloaddb failed"
 
@@ -178,7 +178,7 @@ assert_eq "the view came back and answers" \
   "$(q1 cs "$XTGT" "SELECT count(*) FROM lg_v_child")" 40
 assert_eq "the serial kept its advanced current value" \
   "$(q1 cs "$XTGT" "SELECT current_val FROM db_serial WHERE name='lg_seq'")" \
-  "$(src_sql "$OLD" "SELECT current_val FROM db_serial WHERE name='lg_seq'" | tr -d ' \t\n')"
+  "$(on_src sql_sa "$OLD" "SELECT current_val FROM db_serial WHERE name='lg_seq'" | tr -d ' \t\n')"
 assert_eq "the trigger came back" \
   "$(q1 cs "$XTGT" "SELECT count(*) FROM db_trigger WHERE trigger_name='lg_trg'")" 1
 assert_no_grep "and did not fire during the load" "$WORK/old.import.log" "lg_parent insert"

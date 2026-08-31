@@ -16,8 +16,8 @@ TGT=it_cyc_tgt
 DUMP="$WORK/dump"
 
 db_create "$SRC" || die "cannot create $SRC"
-fixture_apply "$SRC" fkcycle || die "fixture DDL failed (see $WORK/fkcycle.ddl.log)"
-fixture_rows "$SRC" fkcycle || die "fixture rows failed (see $WORK/fkcycle.rows.log)"
+fixture_apply "$SRC" fkcycle || die "fixture DDL failed"
+fixture_rows "$SRC" fkcycle || die "fixture rows failed"
 
 catalog_fp sa "$SRC" "$WORK/src.catalog"
 data_fp sa "$SRC" "$WORK/src.data"

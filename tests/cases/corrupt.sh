@@ -25,8 +25,8 @@ SRC=it_co_src
 GOOD="$WORK/good"
 
 db_create "$SRC" || die "cannot create $SRC"
-fixture_apply "$SRC" legacy || die "fixture DDL failed (see $WORK/legacy.ddl.log)"
-fixture_rows "$SRC" legacy || die "fixture rows failed (see $WORK/legacy.rows.log)"
+fixture_apply "$SRC" legacy || die "fixture DDL failed"
+fixture_rows "$SRC" legacy || die "fixture rows failed"
 unload_dump "$SRC" "$GOOD" --datafile-per-class || die "unloaddb failed"
 
 SRC_PARENT=$(q1 sa "$SRC" "SELECT count(*) FROM lg_parent")

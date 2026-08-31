@@ -24,8 +24,8 @@ TGT_FF=it_fkv_ff
 TGT_CO=it_fkv_co
 
 db_create "$SRC" || die "cannot create $SRC"
-fixture_apply "$SRC" fkviolation || die "fixture DDL failed (see $WORK/fkviolation.ddl.log)"
-fixture_rows "$SRC" fkviolation || die "fixture rows failed (see $WORK/fkviolation.rows.log)"
+fixture_apply "$SRC" fkviolation || die "fixture DDL failed"
+fixture_rows "$SRC" fkviolation || die "fixture rows failed"
 
 # the source is consistent, and the engine proves it: adding the FK a second
 # time over an orphan is refused. That is why the orphans go into the dump.

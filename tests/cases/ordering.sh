@@ -17,8 +17,8 @@ TGT=it_ord_tgt
 DUMP="$WORK/dump"
 
 db_create "$SRC" || die "cannot create $SRC"
-fixture_apply "$SRC" ordering || die "fixture DDL failed (see $WORK/ordering.ddl.log)"
-fixture_rows "$SRC" ordering || die "fixture rows failed (see $WORK/ordering.rows.log)"
+fixture_apply "$SRC" ordering || die "fixture DDL failed"
+fixture_rows "$SRC" ordering || die "fixture rows failed"
 
 catalog_fp sa "$SRC" "$WORK/src.catalog"
 data_fp sa "$SRC" "$WORK/src.data"
