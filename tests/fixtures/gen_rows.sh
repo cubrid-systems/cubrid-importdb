@@ -156,6 +156,18 @@ INSERT INTO ty_fidx VALUES (1, 5, 'AbC'), (2, 50, 'dEf');
 COMMIT;
 ROWS
   ;;
+legacy)
+  awk 'BEGIN {
+    printf "INSERT INTO lg_parent VALUES ";
+    for (i = 1; i <= 12; i++) { if (i > 1) printf ","; printf "(%d,\047C%04d\047,\047parent %d\047)", i, i, i; }
+    printf ";\n";
+    printf "INSERT INTO lg_child VALUES ";
+    for (i = 1; i <= 40; i++) { if (i > 1) printf ","; printf "(%d,%d,%d.75)", i, (i % 12) + 1, i * 100; }
+    printf ";\n";
+    print "INSERT INTO lg_child VALUES (999, NULL, NULL);";
+    print "COMMIT;";
+  }'
+  ;;
 *)
   echo "gen_rows.sh: unknown fixture '$fixture'" >&2
   exit 1

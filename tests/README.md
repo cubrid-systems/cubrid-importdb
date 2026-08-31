@@ -62,6 +62,7 @@ stopped or deleted.
 | `degree` | `--degree=1`, `2` and `4` on a `--datafile-per-class` dump with five object files reach the same final state, and the same state as the source. Note that the data phase spawns `cub_admin loaddb -C` children through a bounded pool at *every* degree, so this is testing the pool's bound, not two different implementations. |
 | `resume` | `SIGKILL` mid-import, then the same command again. Two kill points, because they are different paths: **part-way into a phase** (wait for the manifest to record `stripped`, then kill while rows are loading — the resumed run must empty the tables and reload) and **at a phase boundary** (wait for `loaded`, which is written only after the data phase committed, then kill — the resumed run skips the data phase and re-enters the rebuild under its guard). Both must land on exactly the state an uninterrupted import produces, compared against a baseline import of the same dump. A third identical run must be a no-op. |
 | `refusals` | The things that must be refusals rather than surprises: no arguments, a missing positional, a missing dump directory, a directory with no dump in it, a dump with a schema file but no object roster, `--exceptions-table` (reserved), a non-DBA user, and a non-empty target. Each asserts the non-zero exit *and* the specific diagnostic, so a refusal that starts happening for a different reason still fails. |
+| `corrupt` | A damaged dump, six ways, each from a pristine copy of one good dump. **Caught:** a value of the wrong data type (the object file is named and the loader's own failed-object count is surfaced; nothing is committed), an object file of random bytes, a schema file that will not parse (file *and* line named, and the all-or-nothing definition leaves the target with zero classes and no manifest), and a manifest that records no phase (refused, and the file is left byte-identical rather than overwritten). **Not caught, and asserted as such:** a truncated object file loads what it can and reports `COMPLETE` at exit 0, and a deleted per-class object file leaves that class silently empty at exit 0. See the note below — the cause is upstream and the same for both. |
 | `compat` | The pre-11.5 `CALL ... ON CLASS` rewrite, and what it must not touch. Its dump is hand-written and checked in under `fixtures/dumps/`, so this guard runs on **every** host — unlike `crossversion`, which needs a real old install. The fixture puts every string the scanner looks for somewhere it must not act: inside a `DEFAULT`'s string literal, after a `--` marker *inside* that literal, and inside a loaded row. It also carries the two exempt `find_user` statements and the one `change_serial_owner` that is not exempt, so the reported rewrite count — **exactly 1** — is the assertion: 3 would mean the exemption was lost, more would mean the scanner is matching inside literals. Both literals are then read back verbatim, and the schema file on disk is checked unmodified. |
 
 ### What is not covered here, and why
@@ -73,6 +74,17 @@ Forcing `ha_mode` on a lone server would assert against a fixture that is not
 HA. The guard itself is in `src/import_db.cpp` (`HA_DISABLED ()` /
 `--allow-ha`), and the `m5 ha51b-docker` fixture referenced from
 `src/import_define.cpp` is where it was measured.
+
+**A damaged dump that cannot be detected.** `corrupt` asserts, rather than
+wishes away, that a **truncated** object file and a **deleted** per-class object
+file both import at exit 0 and report `COMPLETE`. One cause covers both: an
+`unloaddb` dump carries no statement of what it contains — no per-class row
+count, no roster of the object files that should exist — so a dump missing
+content is indistinguishable from a dump *of* less content, to `loaddb` and to
+importdb alike. Closing it needs the count in the dump, which is an `unloaddb`
+change. Measured: halving one 41-row object file imported 20 rows and called it
+complete. The case asserts the short count, so if upstream ever does add a
+check, this test fails and someone updates it deliberately.
 
 **Three upstream properties the cases pin down rather than test.** All three are
 `unloaddb`/engine behaviour, not importdb's, and each was found by this suite:
@@ -105,6 +117,8 @@ tests/
 ├── fixtures/
 │   ├── roundtrip.sql        every constraint / index / type family
 │   ├── types.sql            every column-type family, one table each
+│   ├── legacy.sql           what an UPGRADE carries: a named serial, users,
+│   │                        grants, an FK, a view, a trigger
 │   ├── ordering.sql         FK chain + inheritance + partitions
 │   ├── fkcycle.sql          two mutually-referencing tables
 │   ├── fkviolation.sql      parent + two children (orphans injected into the dump)
