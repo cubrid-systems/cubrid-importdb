@@ -93,6 +93,7 @@ namespace
     { 80, "importdb: '--progress=%1$s' is not a valid value; use auto, always or never.\n" },
     { 78, "importdb: '%1$s' is an HA %2$s and --allow-ha was given. The data phase will NOT replicate; the standby will not receive these rows.\n" },
     { 79, "importdb: the standby of '%1$s' did NOT receive this import. importdb loaded into bare heaps, so no row replication record was written; the schema replicated but the rows did not. Rebuild the standby from a backup of this database before failing over to it.\n" },
+    { 82, "importdb: '%1$s' has data_buffer_size=%2$s for %3$s of object data; the index and FOREIGN KEY builds will read from disk instead of memory. Consider data_buffer_size=%4$s or more for this import.\n" },
   };
 }
 

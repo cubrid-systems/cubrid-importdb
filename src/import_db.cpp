@@ -110,9 +110,145 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
 
 #include <string>
 #include <vector>
+
+namespace
+{
+  /* --------------------------------------------------- the page buffer advisory
+   *
+   * data_buffer_size decides whether the terminal phases run in memory or on the
+   * disk, and it is not a knob an operator connects to "importing a dump".
+   * Measured on 11.5.0.2498, one FOREIGN KEY over 3,000,000 child rows, same
+   * statement and same data: 19s at 512M, 3.8s at 1G, 2.3s at 2G. sort_buffer_size
+   * moved it by nothing at either 2M or 256M.
+   *
+   * The cost is in the FK build's per-key probe of the parent's primary key
+   * (btree_prepare_bts, btree_load.c). While the child heap, the child's index
+   * and the parent's key fit in the page buffer together the probes are memory;
+   * past that they are disk, and the phase that dominates a large import is the
+   * one that falls off.
+   *
+   * Object bytes is a proxy for that working set, not a measure of it -- the same
+   * bytes are far more rows when the rows are narrow. A dump carries no row count
+   * (the same gap that makes a truncated object file undetectable, see
+   * tests/cases/corrupt.sh), so bytes is what there is to compare. The message
+   * therefore reports the measured pair and leaves the operator the judgement,
+   * rather than presenting a threshold as a law.
+   */
+
+  long long
+  dump_object_bytes (const cubimport::import_set &iset)
+  {
+    long long total = 0;
+    for (const std::string &f : iset.object_files)
+      {
+	struct stat st;
+	std::string path = iset.dump_dir;
+	if (!path.empty () && path.back () != '/')
+	  {
+	    path += '/';
+	  }
+	path += f;
+	if (stat (path.c_str (), &st) == 0)
+	  {
+	    total += (long long) st.st_size;
+	  }
+      }
+    return total;
+  }
+
+  /* The server's data_buffer_size in bytes, or -1 when it will not say. The
+   * server answers "data_buffer_size=512.0M", so the unit suffix is parsed too. */
+  long long
+  server_data_buffer_bytes (std::string &as_printed)
+  {
+    char buf[256] = "data_buffer_size";
+    if (db_get_system_parameters (buf, (int) sizeof (buf) - 1) != NO_ERROR)
+      {
+	return -1;
+      }
+    const char *eq = strchr (buf, '=');
+    if (eq == NULL)
+      {
+	return -1;
+      }
+    as_printed = eq + 1;
+    char *end = NULL;
+    double v = strtod (eq + 1, &end);
+    if (end == eq + 1)
+      {
+	return -1;
+      }
+    while (*end == ' ')
+      {
+	end++;
+      }
+    switch (*end)
+      {
+      case 'T':
+      case 't':
+	v *= 1024.0;
+	/* FALLTHRU */
+      case 'G':
+      case 'g':
+	v *= 1024.0;
+	/* FALLTHRU */
+      case 'M':
+      case 'm':
+	v *= 1024.0;
+	/* FALLTHRU */
+      case 'K':
+      case 'k':
+	v *= 1024.0;
+	break;
+      default:
+	break;
+      }
+    return (long long) v;
+  }
+
+  std::string
+  human_bytes (long long n)
+  {
+    static const char *const U[] = { "B", "K", "M", "G", "T" };
+    double v = (double) n;
+    int u = 0;
+    while (v >= 1024.0 && u < 4)
+      {
+	v /= 1024.0;
+	u++;
+      }
+    char out[64];
+    snprintf (out, sizeof (out), (v < 10.0 && u > 0) ? "%.1f%s" : "%.0f%s", v, U[u]);
+    return out;
+  }
+
+  /* Warn when the page buffer is under this many times the object bytes. 4x is
+   * where the measurement above stopped thrashing (233M of objects was slow at
+   * 512M and fast at 1G); it is a rule of thumb from one schema. */
+  const int PAGE_BUFFER_HEADROOM = 4;
+
+  void
+  warn_if_page_buffer_small (const cubimport::import_set &iset)
+  {
+    const long long objects = dump_object_bytes (iset);
+    std::string printed;
+    const long long buffer = server_data_buffer_bytes (printed);
+    if (objects <= 0 || buffer <= 0 || buffer >= objects * PAGE_BUFFER_HEADROOM)
+      {
+	return;
+      }
+    IMPORT_WARN (msgcat_message (MSGCAT_CATALOG_UTILS, MSGCAT_UTIL_SET_IMPORTDB,
+				 IMPORTDB_MSG_SMALL_PAGE_BUFFER),
+		 iset.database_name.c_str (), printed.c_str (), human_bytes (objects).c_str (),
+		 human_bytes (objects * PAGE_BUFFER_HEADROOM).c_str ());
+  }
+
+} // namespace
 
 /*
  * importdb() - importdb main routine
@@ -498,6 +634,10 @@ importdb (UTIL_FUNCTION_ARG *arg)
 				 ha_state_name);
 	}
     }
+
+    /* Said before the load rather than after it: the operator can still stop and
+     * change data_buffer_size while nothing has been written. */
+    warn_if_page_buffer_small (iset);
 
     /* WU-20 Definition phase: execute the dump's definition DDL (classes,
      * columns, ADD SUPERCLASS, serials, partitions, PK/UK/FK) on the open
