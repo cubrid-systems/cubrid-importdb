@@ -39,12 +39,15 @@ for d in 1 2 4; do
   run_import "$WORK/d$d.log" -u dba --degree="$d" "$tgt" "$dump"
   assert_rc "degree $d import exits clean" "$IT_RC" 0
   assert_grep "degree $d reports COMPLETE" "$WORK/d$d.log" "import COMPLETE"
+  # The two load-completion messages differ by one clause, and which one appears
+  # is the only evidence in the output that the degree reached the loader.
   if [ "$d" = "1" ]; then
     assert_grep "degree 1 uses the serial completion wording" "$WORK/d$d.log" \
-      "loaded [0-9]+ row\\(s\\) from 5 object file\\(s\\) into '$tgt'; the target now holds data"
+      "loaded [0-9]+ row\\(s\\) from 5 object file\\(s\\) into '$tgt'\\."
+    assert_no_grep "and does not name a degree" "$WORK/d$d.log" "at degree"
   else
     assert_grep "degree $d reports the parallel completion wording" "$WORK/d$d.log" \
-      "at degree $d \\(inter-table parallel"
+      "loaded [0-9]+ row\\(s\\) from 5 object file\\(s\\) into '$tgt' at degree $d\\."
   fi
   catalog_fp cs "$tgt" "$WORK/d$d.catalog"
   data_fp cs "$tgt" "$WORK/d$d.data"
