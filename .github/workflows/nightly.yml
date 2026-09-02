@@ -18,6 +18,14 @@
 name: nightly
 
 on:
+  # A push to main gets the full build and suite, because nothing else on main
+  # does. contract.yml runs here too, but its utility-building job is gated to
+  # schedule/dispatch, so before this line the only thing a merge to main was
+  # checked against was the static surface -- and two branches that each built
+  # fine merged into a main that did not compile at all (the enum entry each of
+  # them appended was terminal, and git kept both without a conflict).
+  push:
+    branches: [main]
   schedule:
     - cron: '23 4 * * *'
   workflow_dispatch:
