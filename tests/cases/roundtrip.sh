@@ -22,8 +22,8 @@ TGT=it_rt_tgt
 DUMP="$WORK/dump"
 
 db_create "$SRC" || die "cannot create $SRC"
-fixture_apply "$SRC" roundtrip || die "fixture DDL failed (see $WORK/roundtrip.ddl.log)"
-fixture_rows "$SRC" roundtrip || die "fixture rows failed (see $WORK/roundtrip.rows.log)"
+fixture_apply "$SRC" roundtrip || die "fixture DDL failed"
+fixture_rows "$SRC" roundtrip || die "fixture rows failed"
 
 catalog_fp sa "$SRC" "$WORK/src.catalog"
 data_fp sa "$SRC" "$WORK/src.data"

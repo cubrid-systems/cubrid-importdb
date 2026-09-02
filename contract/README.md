@@ -52,7 +52,14 @@ worthless. CI asserts the failure.
 - **grep** — contracts that are source shape rather than API. The `cub_admin`
   argv resolution is the one the data phase depends on: execing `cub_admin
   loaddb …` instead of `cubrid loaddb …` keeps the loader a *direct* child, which
-  is what makes `PR_SET_PDEATHSIG` reach it when the parent is killed.
+  is what makes `PR_SET_PDEATHSIG` reach it when the parent is killed. Two more
+  pin the pre-11.5 compatibility rule: `ldr_compat_call_target` in `load_db.c` is
+  where the rule set is *defined*, and `CTV_SERIAL_NAME` in
+  `schema_system_catalog.cpp` is why it is needed at all. importdb cannot reach a
+  parse tree from the installed surface, so it replicates those rewrites
+  textually — a fourth renamed catalog view upstream, or a dropped
+  `find_user`/`login` exemption, would make that copy stale and break pre-11.5
+  dumps again, silently. These are the lines that would notice.
 
 ## Adding a requirement
 

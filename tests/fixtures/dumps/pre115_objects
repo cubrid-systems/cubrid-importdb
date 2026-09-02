@@ -1,0 +1,4 @@
+%id [cp_t] 26
+%class [cp_t] ([id] [note])
+1 'a row whose text says on class [db_serial] and on class [db_user]'
+2 'plain'

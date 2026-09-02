@@ -34,6 +34,8 @@ on:
       - 'cmake/**'
       - 'CMakeLists.txt'
       - 'tools/**'
+      # and so must a change to the suite itself, now that this job runs it
+      - 'tests/**'
       - '.github/workflows/nightly.yml'
 
 permissions:
@@ -51,7 +53,7 @@ jobs:
   nightly:
     name: build + import against the nightly
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
@@ -146,6 +148,63 @@ jobs:
           set -euo pipefail
           bash tools/smoke.sh "$PWD/build/cubrid-importdb"
 
+      # ---------------------------------------------------- the functional suite
+      # Until now CI ran only the smoke test: one two-table dump, six catalog
+      # assertions. The suite proper never ran anywhere but a developer's host,
+      # which is a strange place to keep the only evidence the tool works.
+      #
+      # It runs here because this job already has the two expensive things it
+      # needs -- a built binary and a real engine to serve databases -- so the
+      # marginal cost is minutes, not a new job.
+      #
+      # perf is the one case left out, deliberately: it builds a 393,000-row
+      # fixture and runs four paired imports, and its verdict is a ratio measured
+      # on the host it ran on. A shared CI runner is the worst place to measure
+      # that and the worst place to trust the number. Run it where you can
+      # attribute the clock.
+      #
+      # ------------------------------------------------------------ 10.2 -> 11.5
+      # crossversion is in the list and needs a SECOND, OLDER install to write
+      # the dump with; without IT_SRC_CUBRID it prints a SKIP and the suite stays
+      # green. 10.2 is the floor -- the two hard 9.x -> 10.x breaks (SHA1 -> SHA2
+      # passwords, CBRD-20659; the reuse_oid default, CBRD-23708) are below it and
+      # need a migration step before any loader runs.
+      #
+      # --install-only: this engine is never compiled against, only run, so the
+      # source tarball would be half the download for nothing.
+      - name: cache the old engine
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4
+        with:
+          path: engine102/dl
+          key: engine-10.2_latest-${{ github.run_id }}
+          restore-keys: engine-10.2_latest-
+
+      - name: fetch a 10.2 install to write the old dump with
+        id: old
+        continue-on-error: true
+        run: bash tools/fetch_engine.sh --release 10.2_latest --install-only engine102
+
+      # A published 10.x binary links the ncurses 5 sonames, which a current
+      # runner image no longer ships. The harness links whatever major version IS
+      # present under those names, and SKIPS with the reason if it cannot -- so a
+      # missing library costs the crossversion case, never the build. Installing
+      # them here when the archive still has them keeps it a real run.
+      - name: ncurses 5, if this runner still has it
+        continue-on-error: true
+        run: sudo apt-get install -y -qq libncurses5 libtinfo5 || true
+
+      - name: the functional suite (every case but perf)
+        run: |
+          set -euo pipefail
+          # empty when the fetch failed, which the suite reads as "no old engine"
+          # and turns into a SKIP rather than a failure
+          if [ "${{ steps.old.outcome }}" = success ]; then
+            export IT_SRC_CUBRID="$PWD/engine102/install"
+          fi
+          bash tests/run_tests.sh --bin="$PWD/build/cubrid-importdb" \
+            roundtrip types ordering fkcycle fkviolation dryrun degree \
+            resume refusals corrupt compat crossversion
+
       - name: behaviour contract against that install
         run: |
           set -euo pipefail
@@ -169,4 +228,5 @@ jobs:
           path: |
             /tmp/build.log
             engine/install/log/**
+            engine102/install/log/**
           retention-days: 7

@@ -209,11 +209,21 @@ endif ()
 if (BUILD_UTILITY)
   add_test (NAME smoke COMMAND ${CMAKE_SOURCE_DIR}/tools/smoke.sh $<TARGET_FILE:cubrid-importdb>)
   set_tests_properties (smoke PROPERTIES SKIP_RETURN_CODE 77)
-  # The functional suite: round-trip fidelity, dependency ordering, FK cycles,
-  # FK violations, --dry-run, --degree, resume after SIGKILL, and the refusals.
+  # The functional suite: round-trip fidelity, every column-type family,
+  # dependency ordering, FK cycles, FK violations, --dry-run, --degree, resume
+  # after SIGKILL, the refusals, a damaged dump, the pre-11.5 compat rewrite, the
+  # cross-version import, and the performance comparison.
   # Same contract as smoke -- 0 pass, 1 fail, 77 could not set up -- and it
   # creates every database in a scratch directory outside the source tree.
+  #
+  # The crossversion case SKIPS unless IT_SRC_CUBRID names a second, older
+  # install; pass it through the environment to include it here.
+  #
+  # An hour, not the half it used to be: the perf case alone builds a 393,000-row
+  # fixture and runs four paired imports, and the cases added for the
+  # cross-version work cost a few minutes more on top. Run
+  # `tests/run_tests.sh <case>...` directly when you do not want to pay for perf.
   add_test (NAME functional
             COMMAND ${CMAKE_SOURCE_DIR}/tests/run_tests.sh --bin $<TARGET_FILE:cubrid-importdb>)
-  set_tests_properties (functional PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 1800)
+  set_tests_properties (functional PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 3600)
 endif ()

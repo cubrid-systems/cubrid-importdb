@@ -47,8 +47,8 @@ assert_grep "the missing object roster is named" "$WORK/noobj.log" \
 
 # a real dump is needed from here on
 db_create "$SRC" || die "cannot create $SRC"
-fixture_apply "$SRC" fkviolation || die "fixture DDL failed (see $WORK/fkviolation.ddl.log)"
-fixture_rows "$SRC" fkviolation || die "fixture rows failed (see $WORK/fkviolation.rows.log)"
+fixture_apply "$SRC" fkviolation || die "fixture DDL failed"
+fixture_rows "$SRC" fkviolation || die "fixture rows failed"
 unload_dump "$SRC" "$WORK/dump" --datafile-per-class || die "unloaddb failed"
 
 run_import "$WORK/exctbl.log" -u dba --exceptions-table=t somedb "$WORK/dump"

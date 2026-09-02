@@ -7,6 +7,11 @@
 #   tests/run_tests.sh -l                    list the cases
 #   tests/run_tests.sh --bin=/path/to/cubrid-importdb
 #
+# The crossversion case needs a SECOND, OLDER CUBRID install to write the dump
+# with, and skips without one:
+#
+#   IT_SRC_CUBRID=/path/to/10.2/install tests/run_tests.sh crossversion
+#
 # Each case is a separate process under tests/cases/. It prints one
 # PASS/FAIL/SKIP line per assertion; this script tallies them, prints the
 # totals, and exits non-zero if anything failed. A case that dies without
@@ -20,10 +25,10 @@ IT_SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
 . "$IT_SELF_DIR/lib/common.sh"
 
-IT_ALL_CASES="roundtrip ordering fkcycle fkviolation dryrun degree resume refusals perf"
+IT_ALL_CASES="roundtrip types ordering fkcycle fkviolation dryrun degree resume refusals corrupt compat crossversion perf"
 
 usage () {
-  sed -n '2,16p' "$IT_SELF_DIR/run_tests.sh" | sed 's/^# \{0,1\}//'
+  sed -n '2,21p' "$IT_SELF_DIR/run_tests.sh" | sed 's/^# \{0,1\}//'
 }
 
 IT_KEEP=0

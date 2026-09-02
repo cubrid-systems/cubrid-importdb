@@ -231,7 +231,7 @@ snapshot_arms () { # tag
 note "host at start: $(uptime)"
 
 db_create "$SRC" 768M 256M || die "cannot create $SRC"
-fixture_apply "$SRC" perf || die "fixture DDL failed (see $WORK/perf.ddl.log)"
+fixture_apply "$SRC" perf || die "fixture DDL failed"
 bash "$IT_FIXTURES_DIR/gen_perf_rows.sh" "$PERF_FACTS" "$PERF_SIDES" "$PERF_DIMS" \
   > "$WORK/perf.rows.sql" || die "row generation failed"
 sql_sa_load "$SRC" "$WORK/perf.rows.sql" > "$WORK/perf.rows.log" 2>&1

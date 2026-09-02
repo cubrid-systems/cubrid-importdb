@@ -57,7 +57,9 @@
 #include "porting.h"
 
 #include <cerrno>
+#include <cctype>
 #include <cstring>
+#include <strings.h>
 #include <string>
 #include <vector>
 
@@ -77,6 +79,244 @@ namespace
 	return dir + name;
       }
     return dir + "/" + name;
+  }
+
+  /*
+   * Pre-11.5 dumps name the catalog VIEWS as `CALL ... ON CLASS <view>` targets.
+   * 11.5 left the methods on the underlying classes, so such a statement fails
+   * with `Method "<m>" not found` and takes the all-or-nothing definition with
+   * it. loaddb rewrites the target in the parse tree (ldr_compat_call_target,
+   * load_db.c); no PT_NODE is reachable from the installed surface, so the same
+   * three targets are rewritten in the buffer before it is parsed:
+   *
+   *     db_serial, db_authorization  ->  _db_*
+   *     db_user                      ->  _db_user, except find_user and login,
+   *                                      which the view still carries
+   *
+   * Literals and comments are copied through, so only a real ON CLASS target is
+   * rewritten. The rewrite adds one character and never a newline, so the line
+   * numbers in a later diagnostic still match the dump on disk.
+   */
+
+  bool
+  is_ident_char (char c)
+  {
+    return isalnum ((unsigned char) c) != 0 || c == '_' || c == '#';
+  }
+
+  /* Case-insensitive, and not run together with a longer identifier. */
+  bool
+  kw_at (const std::string &s, size_t i, const char *word)
+  {
+    const size_t n = std::strlen (word);
+    if (i + n > s.size ())
+      {
+	return false;
+      }
+    for (size_t k = 0; k < n; k++)
+      {
+	if (tolower ((unsigned char) s[i + k]) != tolower ((unsigned char) word[k]))
+	  {
+	    return false;
+	  }
+      }
+    return i + n == s.size () || !is_ident_char (s[i + n]);
+  }
+
+  size_t
+  skip_ws (const std::string &s, size_t i)
+  {
+    while (i < s.size () && isspace ((unsigned char) s[i]) != 0)
+      {
+	i++;
+      }
+    return i;
+  }
+
+  /* End of the single-quoted literal at i; '' is an escaped quote, not its end. */
+  size_t
+  literal_end (const std::string &s, size_t i)
+  {
+    for (i++; i < s.size (); i++)
+      {
+	if (s[i] != '\'')
+	  {
+	    continue;
+	  }
+	if (i + 1 < s.size () && s[i + 1] == '\'')
+	  {
+	    i++;
+	    continue;
+	  }
+	return i + 1;
+      }
+    return s.size ();
+  }
+
+  /* End of the comment at i, or i when none starts there. */
+  size_t
+  comment_end (const std::string &s, size_t i)
+  {
+    if (i + 1 >= s.size ())
+      {
+	return i;
+      }
+    if (s[i] == '-' && s[i + 1] == '-')
+      {
+	const size_t nl = s.find ('\n', i + 2);
+	return (nl == std::string::npos) ? s.size () : nl;
+      }
+    if (s[i] == '/' && s[i + 1] == '*')
+      {
+	const size_t close = s.find ("*/", i + 2);
+	return (close == std::string::npos) ? s.size () : close + 2;
+      }
+    return i;
+  }
+
+  /* A statement's first token can sit behind a comment block, and the db_user
+   * exemption below depends on reaching it. */
+  size_t
+  skip_trivia (const std::string &s, size_t i)
+  {
+    for (size_t before = s.size () + 1; i != before;)
+      {
+	before = i;
+	i = comment_end (s, skip_ws (s, i));
+      }
+    return i;
+  }
+
+  /* One identifier at i, bracketed ([name]) or bare. */
+  bool
+  read_ident (const std::string &s, size_t i, std::string &name, bool &bracketed, size_t &end)
+  {
+    bracketed = false;
+    if (i < s.size () && s[i] == '[')
+      {
+	const size_t close = s.find (']', i + 1);
+	if (close == std::string::npos)
+	  {
+	    return false;
+	  }
+	bracketed = true;
+	name = s.substr (i + 1, close - i - 1);
+	end = close + 1;
+	return !name.empty ();
+      }
+    size_t j = i;
+    while (j < s.size () && is_ident_char (s[j]))
+      {
+	j++;
+      }
+    if (j == i)
+      {
+	return false;
+      }
+    name = s.substr (i, j - i);
+    end = j;
+    return true;
+  }
+
+  bool
+  ident_is (const std::string &name, const char *want)
+  {
+    return name.size () == std::strlen (want) && strcasecmp (name.c_str (), want) == 0;
+  }
+
+  /* Method name of the CALL statement at stmt_start, or "" when it is not one. */
+  std::string
+  call_method_of (const std::string &s, size_t stmt_start, size_t upto)
+  {
+    size_t i = skip_trivia (s, stmt_start);
+    if (!kw_at (s, i, "call"))
+      {
+	return std::string ();
+      }
+    i = skip_ws (s, i + 4);
+    std::string name;
+    bool bracketed = false;
+    size_t end = 0;
+    if (!read_ident (s, i, name, bracketed, end) || end > upto)
+      {
+	return std::string ();
+      }
+    return name;
+  }
+
+  std::string
+  rewrite_pre115_call_targets (const std::string &s, int &rewritten)
+  {
+    static const char *const RENAMED[] = { "db_serial", "db_authorization", "db_user" };
+
+    std::string out;
+    out.reserve (s.size () + 64);
+    rewritten = 0;
+
+    size_t stmt_start = 0;
+    size_t i = 0;
+    while (i < s.size ())
+      {
+	if (s[i] == '\'')
+	  {
+	    const size_t end = literal_end (s, i);
+	    out.append (s, i, end - i);
+	    i = end;
+	    continue;
+	  }
+
+	const size_t cend = comment_end (s, i);
+	if (cend != i)
+	  {
+	    out.append (s, i, cend - i);
+	    i = cend;
+	    continue;
+	  }
+
+	if (s[i] == ';')
+	  {
+	    stmt_start = i + 1;
+	  }
+
+	if ((s[i] == 'o' || s[i] == 'O') && (i == 0 || !is_ident_char (s[i - 1])) && kw_at (s, i, "on"))
+	  {
+	    const size_t j = skip_ws (s, i + 2);
+	    const size_t k = kw_at (s, j, "class") ? skip_ws (s, j + 5) : i;
+	    std::string target;
+	    bool bracketed = false;
+	    size_t end = 0;
+	    if (k != i && read_ident (s, k, target, bracketed, end))
+	      {
+		bool renamed = false;
+		for (const char *r : RENAMED)
+		  {
+		    renamed = renamed || ident_is (target, r);
+		  }
+		if (renamed && ident_is (target, "db_user"))
+		  {
+		    const std::string m = call_method_of (s, stmt_start, i);
+		    renamed = !ident_is (m, "find_user") && !ident_is (m, "login");
+		  }
+		if (renamed)
+		  {
+		    out.append (s, i, k - i);	/* "on class" and its spacing, verbatim */
+		    out += bracketed ? "[_" : "_";
+		    out += target;
+		    if (bracketed)
+		      {
+			out += ']';
+		      }
+		    i = end;
+		    rewritten++;
+		    continue;
+		  }
+	      }
+	  }
+
+	out += s[i];
+	i++;
+      }
+    return out;
   }
 
   /*
@@ -128,6 +368,14 @@ namespace
 	}
       fclose (fp);
     }
+
+    /* a dump from 11.5 or newer has no such target and comes back unchanged */
+    int rewritten = 0;
+    buf = rewrite_pre115_call_targets (buf, rewritten);
+    if (rewritten > 0)
+      {
+	IMPORT_PRINT (msg (IMPORTDB_MSG_DEFINE_COMPAT_REWRITE), rewritten, file_path.c_str ());
+      }
 
     DB_SESSION *session = db_open_buffer (buf.c_str ());
     if (session == NULL || db_get_errors (session) != NULL)
