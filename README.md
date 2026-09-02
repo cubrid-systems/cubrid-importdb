@@ -113,17 +113,43 @@ validates them — `ADD CONSTRAINT ... FOREIGN KEY` builds the FK's b-tree over 
 existing rows and checks each key against the parent as it goes. importdb does not
 duplicate that work; it only takes over where the engine stops.
 
-Each phase announces what it did, and the run ends with a consolidated report —
-the per-class verdict, the row counts, and anything left for you to repair. On a
-terminal those lines scroll past under a progress block that is redrawn in place;
-it is off whenever stdout is not a terminal, so a pipe, a file or a CI log gets
-exactly the plain output it always got.
+Each phase announces what it did. A clean run, with the graph and the schedule it
+also prints left out:
+
+```
+importdb: rostered default dump (prefix 'shop') from /tmp/rmcap/dump
+importdb: defined 'shoptgt'.
+importdb: stripped 11 constraint(s) from 'shoptgt'.
+importdb: loaded 3008 row(s) from 1 object file(s) into 'shoptgt'.
+importdb: rebuilt 8 constraint(s) and built 2 index(es) on 'shoptgt'.
+importdb: every FOREIGN KEY on 'shoptgt' was accepted by the engine -- 3 edge(s) clean, 0 skipped (parent key withheld).
+importdb: defined 3 FK(s) on 'shoptgt'.
+importdb: updated statistics on 5 class(es) in 'shoptgt'.
+```
+
+The run ends with a consolidated report — the per-class verdict, the row counts,
+and anything left for you to repair. On a terminal those lines scroll past under a
+block redrawn in place, which answers what the printed lines cannot: which phase
+is running, how many are left, and how far into it you are.
+
+```
+ importdb  tuitgt                                           load  [6/10]  00:00
+  ███████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  23%  0/4 done · 2 loading
+    tuisrc_dba.customer         ██████████████████████████████░░░░░  85%  2 MB
+    tuisrc_dba.orders           ██████░░░░░░░░░░░░░░░░░░░░░░░░░░░░  17%  18 MB
+```
+
+The per-file bars are real, not estimated: the loaders are separate
+`cub_admin loaddb -C` processes that report nothing until they exit, so importdb
+reads each one's file offset out of `/proc/<pid>/fdinfo`. The display is off
+whenever stdout is not a terminal, so a pipe, a file or a CI log gets exactly the
+plain output it always got.
 
 Everything the dump defines is replayed from the dump's own DDL, which is more
 than it looks: **users, their password hashes and their grants all come back**.
 
-See [docs/output.md](docs/output.md) for a complete run, the report, the live
-display, the exceptions artifact and how the passwords travel — all verbatim.
+See [docs/output.md](docs/output.md) for the complete run with its graph and
+schedule, the report, the exceptions artifact and how the passwords travel.
 
 ## Referential integrity
 
