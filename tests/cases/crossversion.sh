@@ -176,6 +176,22 @@ assert_eq "the foreign key was defined against the loaded rows" \
   "$(q1 cs "$XTGT" "SELECT count(*) FROM db_index WHERE class_name='lg_child' AND is_foreign_key='YES'")" 1
 assert_eq "the view came back and answers" \
   "$(q1 cs "$XTGT" "SELECT count(*) FROM lg_v_child")" 40
+
+# RND-2774: a pre-11.5 unloaddb writes a view's query specs with the SELECT list
+# replaced by NA, and the second spec of lg_v_tree pairs that with a UNION in a
+# subquery and a START WITH against a literal. On 11.4.5 loaddb could not infer a
+# type for the literal and refused the statement. It imports cleanly here, so this
+# is a guard: nothing else stops the shape from breaking again.
+assert_grep "the old dump carries the NA-substituted query spec" \
+  "$OLD_SCHEMA" "ADD QUERY select NA,NA,NA,NA from \(select NA"
+assert_eq "both of the view's query specs came back" \
+  "$(q1 cs "$XTGT" "SELECT count(*) FROM lg_v_tree")" 12
+# No source-side comparison for this one: 10.2 cannot execute the view it just
+# dumped -- `SELECT count(*) FROM lg_v_tree` there returns "Internal error --
+# reporting semantic error", the failure CBRD-26825 covers. The definition is what
+# has to survive the version gap, and it does.
+assert_eq "the view exists as a VCLASS, not a table" \
+  "$(q1 cs "$XTGT" "SELECT count(*) FROM db_class WHERE class_name='lg_v_tree' AND class_type='VCLASS'")" 1
 assert_eq "the serial kept its advanced current value" \
   "$(q1 cs "$XTGT" "SELECT current_val FROM db_serial WHERE name='lg_seq'")" \
   "$(on_src sql_sa "$OLD" "SELECT current_val FROM db_serial WHERE name='lg_seq'" | tr -d ' \t\n')"

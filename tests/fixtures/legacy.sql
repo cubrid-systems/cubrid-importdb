@@ -22,6 +22,17 @@
 --                `ALTER VCLASS .. ADD QUERY` later; the query spec is the half
 --                that has broken before (RND-2774).
 --   lg_trg       a trigger, which importdb defines strictly last.
+--   lg_tree /    the view shape that actually broke. A pre-11.5 unloaddb writes a
+--   lg_v_tree    view's query specs with the SELECT list replaced by NA, and RND-2774
+--                is what happens next: a subquery whose list is NA, compared against a
+--                literal in START WITH, made loaddb's type inference fail with
+--                `Cannot coerce _utf8'..' to type unknown data type` on 11.4.5. The
+--                10.2 dump of this view carries exactly that -- two ADD QUERY
+--                statements, the second one `select NA,NA,NA,NA from (select NA,NA,NA,NA
+--                union select NA,NA,NA,NA from ..) [A] (..) start with
+--                [A].[PARENTOUCODE]=_utf8'10000000' connect by prior ..`. It imports
+--                cleanly on 11.5.0.2498, so this is a regression guard rather than a
+--                reproduction: nothing else stops the shape from breaking again.
 
 CREATE USER lg_reader;
 CREATE USER lg_writer PASSWORD 'lgpw';
@@ -55,3 +66,29 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON lg_child TO lg_writer;
 -- advance the serial so its current value is not its start value
 SELECT lg_seq.next_value;
 SELECT lg_seq.next_value;
+
+CREATE TABLE lg_tree (
+  oucode       VARCHAR(20),
+  parentoucode VARCHAR(20),
+  orgname      VARCHAR(100),
+  ouorder      INTEGER
+);
+
+CREATE VCLASS lg_v_tree (
+  oucode       VARCHAR(20),
+  parentoucode VARCHAR(20),
+  orgname      VARCHAR(100),
+  ouorder      INTEGER
+) AS
+  SELECT oucode, parentoucode, orgname, ouorder FROM lg_tree;
+
+-- The second query spec. Its shape is the point: a UNION inside a subquery, the
+-- subquery aliased, and START WITH comparing one of its columns to a literal.
+ALTER VCLASS [lg_v_tree] ADD QUERY
+  SELECT [A].[OUCODE], [A].[PARENTOUCODE], [A].[ORGNAME], [A].[OUORDER]
+  FROM ( SELECT '10000000' AS [OUCODE], NULL AS [PARENTOUCODE], 'ROOT' AS [ORGNAME], 0 AS [OUORDER]
+         UNION
+         SELECT [T].[OUCODE], [T].[PARENTOUCODE], [T].[ORGNAME], [T].[OUORDER] FROM [LG_TREE] [T] ) [A]
+  START WITH [A].[PARENTOUCODE] = '10000000'
+  CONNECT BY PRIOR [A].[OUCODE] = [A].[PARENTOUCODE]
+  ORDER SIBLINGS BY 1;
