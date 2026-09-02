@@ -165,6 +165,14 @@ legacy)
     for (i = 1; i <= 40; i++) { if (i > 1) printf ","; printf "(%d,%d,%d.75)", i, (i % 12) + 1, i * 100; }
     printf ";\n";
     print "INSERT INTO lg_child VALUES (999, NULL, NULL);";
+    # lg_tree is a hierarchy rooted at 10000000 -- the literal that the second
+    # query spec of lg_v_tree compares against in START WITH.
+    printf "INSERT INTO lg_tree VALUES ";
+    for (i = 1; i <= 6; i++) {
+      if (i > 1) printf ",";
+      printf "(\047%08d\047,\047%08d\047,\047dept %d\047,%d)", 10000000 + i, 10000000 + (i > 3 ? i - 3 : 0), i, i;
+    }
+    printf ";\n";
     print "COMMIT;";
   }'
   ;;
