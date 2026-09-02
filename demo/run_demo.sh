@@ -636,7 +636,7 @@ chk "--degree=4 on the per-class dump: exit status" "$parp_rc" "0"
 chk "  ... object files available to fan out over" \
     "$(object_file_count "$DUMP_S4B" "$SRC")" "5"
 chk "  ... the data phase reports the degree it used" \
-    "$(grep -c 'at degree 4 (inter-table parallel' "$LOGS/importdb.par.perclass.log")" "1"
+    "$(grep -c 'at degree 4\.' "$LOGS/importdb.par.perclass.log")" "1"
 
 step "and the result is the same either way"
 state_dump "$PARP" "$W/state.par"
