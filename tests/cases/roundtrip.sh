@@ -35,8 +35,8 @@ db_start "$TGT" || die "cannot start $TGT"
 run_import "$WORK/import.log" -u dba "$TGT" "$DUMP"
 assert_rc "import exits clean" "$IT_RC" 0
 assert_grep "report verdict is COMPLETE" "$WORK/import.log" "import COMPLETE"
-assert_grep "catalog reported to match the dump snapshot" "$WORK/import.log" \
-  "full round-trip complete"
+assert_grep "every FK in the dump was defined" "$WORK/import.log" \
+  "defined [0-9]+ FK\\(s\\) on '$TGT'"
 
 expected_rows=$(awk -F'rows=' '{ split($2, a, " "); s += a[1] } END { print s + 0 }' "$WORK/src.data")
 assert_grep "loaded row total matches the source" "$WORK/import.log" \

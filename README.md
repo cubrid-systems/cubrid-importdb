@@ -121,7 +121,7 @@ importdb: rostered default dump (prefix 'shop') from /tmp/rmcap/dump
     objects:  single (shop_objects)
     indexes:  shop_indexes
     triggers: (none)
-importdb: defined 'shoptgt'; the target database is now fully defined and empty.
+importdb: defined 'shoptgt'.
 importdb: dependency graph for 'shoptgt' -- 5 node(s), 3 FK edge(s), 0 inheritance edge(s), 1 serial(s)
   - audit_log: pk=pk_audit_log uk=[] fk=[]   [serials=[audit_log_ai_entry_id]]
   - customer: pk=pk_customer uk=[uk_customer_email] fk=[fk_customer_region]
@@ -160,11 +160,11 @@ importdb: schedule for 'shoptgt' -- data phase 3 level(s), 17 terminal task(s)
       #14 STATS           orders   [after #2, #8]
       #15 STATS           product   [after #3, #6, #8]
       #16 STATS           region   [after #4, #7, #8]
-importdb: stripped 11 constraint(s) from 'shoptgt'; the target now holds bare heaps ready for the data phase.
-importdb: loaded 3008 row(s) from 1 object file(s) into 'shoptgt'; the target now holds data in bare heaps (constraints are rebuilt in a later phase).
-importdb: rebuilt 8 constraint(s) and built 2 index(es) on 'shoptgt'; PK/UNIQUE and plain indexes are restored (FK definition is a later phase).
-importdb: every FOREIGN KEY on 'shoptgt' was accepted by the engine -- 3 edge(s) clean, 0 skipped (parent key withheld). The engine validates the rows while it builds each FK.
-importdb: defined 3 FK(s) on 'shoptgt'; the catalog now matches the dump snapshot (full round-trip complete).
+importdb: stripped 11 constraint(s) from 'shoptgt'.
+importdb: loaded 3008 row(s) from 1 object file(s) into 'shoptgt'.
+importdb: rebuilt 8 constraint(s) and built 2 index(es) on 'shoptgt'.
+importdb: every FOREIGN KEY on 'shoptgt' was accepted by the engine -- 3 edge(s) clean, 0 skipped (parent key withheld).
+importdb: defined 3 FK(s) on 'shoptgt'.
 importdb: updated statistics on 5 class(es) in 'shoptgt'.
 ```
 
@@ -249,9 +249,9 @@ engine would not have allowed.
 withholds the violated one, and exits 1:
 
 ```
-importdb: stripped 11 constraint(s) from 'shopbad'; the target now holds bare heaps ready for the data phase.
-importdb: loaded 3010 row(s) from 5 object file(s) into 'shopbad'; the target now holds data in bare heaps (constraints are rebuilt in a later phase).
-importdb: rebuilt 8 constraint(s) and built 2 index(es) on 'shopbad'; PK/UNIQUE and plain indexes are restored (FK definition is a later phase).
+importdb: stripped 11 constraint(s) from 'shopbad'.
+importdb: loaded 3010 row(s) from 5 object file(s) into 'shopbad'.
+importdb: rebuilt 8 constraint(s) and built 2 index(es) on 'shopbad'.
 importdb: the engine rejected the FOREIGN KEY and found 2 orphan row(s) on 'orders' -> 'customer' [fk_orders_customer]; that FK is withheld and its offenders enumerated.
 importdb: 'shopbad' has referential violations -- 1 FOREIGN KEY(s) rejected by the engine, 2 orphan row(s) total; offenders written to /tmp/rmcap/perclass/importdb.exceptions. See the manifest [validate] section; importdb exits non-zero.
 importdb: defined 1 FK(s), withheld 2 on 'shopbad' (the engine rejected the data, or the parent key was un-rebuilt); re-add DDL recorded in the manifest [fkdefine] section and /tmp/rmcap/perclass/importdb.exceptions. importdb exits non-zero.

@@ -132,14 +132,14 @@ importdb: rostered default dump (prefix 'idbdemo_src') from <dump-dir>
     schema:   idbdemo_src_schema (single)
     objects:  single (idbdemo_src_objects)
     indexes:  idbdemo_src_indexes
-importdb: defined 'idbdemo_new'; the target database is now fully defined and empty.
+importdb: defined 'idbdemo_new'.
 importdb: dependency graph for 'idbdemo_new' -- 5 node(s), 3 FK edge(s), 0 inheritance edge(s), 1 serial(s)
 importdb: schedule for 'idbdemo_new' -- data phase 3 level(s), 20 terminal task(s)
-importdb: stripped 11 constraint(s) from 'idbdemo_new'; the target now holds bare heaps ready for the data phase.
+importdb: stripped 11 constraint(s) from 'idbdemo_new'.
 importdb: loaded 3008 row(s) from 1 object file(s) into 'idbdemo_new'; ...
 importdb: rebuilt 8 constraint(s) and built 2 index(es) on 'idbdemo_new'; ...
 importdb: FK re-validation of 'idbdemo_new' passed -- 3 edge(s) validated clean, ...
-importdb: defined 3 FK(s) on 'idbdemo_new'; the catalog now matches the dump snapshot ...
+importdb: defined 3 FK(s) on 'idbdemo_new'.
 importdb: updated statistics on 5 class(es) in 'idbdemo_new'.
 ```
 
@@ -333,7 +333,7 @@ it is in the demo rather than in a footnote.
 
 ```
     objects:  per-class (5 file(s))
-importdb: loaded 3008 row(s) from 5 object file(s) into 'idbdemo_parpc' at degree 4 (inter-table parallel; ...)
+importdb: loaded 3008 row(s) from 5 object file(s) into 'idbdemo_parpc' at degree 4.
 ```
 
 Asserted: exit 0, five object files, the data phase reports the degree it
