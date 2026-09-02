@@ -113,127 +113,17 @@ validates them — `ADD CONSTRAINT ... FOREIGN KEY` builds the FK's b-tree over 
 existing rows and checks each key against the parent as it goes. importdb does not
 duplicate that work; it only takes over where the engine stops.
 
-Each phase announces what it did. A complete run, verbatim:
+Each phase announces what it did, and the run ends with a consolidated report —
+the per-class verdict, the row counts, and anything left for you to repair. On a
+terminal those lines scroll past under a progress block that is redrawn in place;
+it is off whenever stdout is not a terminal, so a pipe, a file or a CI log gets
+exactly the plain output it always got.
 
-```
-importdb: rostered default dump (prefix 'shop') from /tmp/rmcap/dump
-    schema:   shop_schema (single)
-    objects:  single (shop_objects)
-    indexes:  shop_indexes
-    triggers: (none)
-importdb: defined 'shoptgt'.
-importdb: dependency graph for 'shoptgt' -- 5 node(s), 3 FK edge(s), 0 inheritance edge(s), 1 serial(s)
-  - audit_log: pk=pk_audit_log uk=[] fk=[]   [serials=[audit_log_ai_entry_id]]
-  - customer: pk=pk_customer uk=[uk_customer_email] fk=[fk_customer_region]
-  - orders: pk=pk_orders uk=[] fk=[fk_orders_customer, fk_orders_product]
-  - product: pk=pk_product uk=[uk_product_sku] fk=[]
-  - region: pk=pk_region uk=[uk_region_code] fk=[]
-  FK edges (child -> parent):
-      customer -> region   (fk_customer_region)
-      orders -> customer   (fk_orders_customer)
-      orders -> product   (fk_orders_product)
-  cycles: none
-  level sets (parallel-eligible; complete=true):
-      L0: [audit_log, product, region]
-      L1: [customer]
-      L2: [orders]
-importdb: schedule for 'shoptgt' -- data phase 3 level(s), 17 terminal task(s)
-  data phase (parallel-eligible level sets):
-      L0: [audit_log, product, region]
-      L1: [customer]
-      L2: [orders]
-  terminal tasks (in a valid execution order):
-      #0  REBUILD_PK      audit_log (pk_audit_log)
-      #1  REBUILD_PK      customer (pk_customer)
-      #2  REBUILD_PK      orders (pk_orders)
-      #3  REBUILD_PK      product (pk_product)
-      #4  REBUILD_PK      region (pk_region)
-      #5  REBUILD_UNIQUE  customer (uk_customer_email)
-      #6  REBUILD_UNIQUE  product (uk_product_sku)
-      #7  REBUILD_UNIQUE  region (uk_region_code)
-      #8  BUILD_INDEX     <deferred indexes: shop_indexes>
-      #9  FK_DEFINE       customer -> region (fk_customer_region)   [after #4, #7]
-      #10 FK_DEFINE       orders -> customer (fk_orders_customer)   [after #1, #5]
-      #11 FK_DEFINE       orders -> product (fk_orders_product)   [after #3, #6]
-      #12 STATS           audit_log   [after #0, #8]
-      #13 STATS           customer   [after #1, #5, #8]
-      #14 STATS           orders   [after #2, #8]
-      #15 STATS           product   [after #3, #6, #8]
-      #16 STATS           region   [after #4, #7, #8]
-importdb: stripped 11 constraint(s) from 'shoptgt'.
-importdb: loaded 3008 row(s) from 1 object file(s) into 'shoptgt'.
-importdb: rebuilt 8 constraint(s) and built 2 index(es) on 'shoptgt'.
-importdb: every FOREIGN KEY on 'shoptgt' was accepted by the engine -- 3 edge(s) clean, 0 skipped (parent key withheld).
-importdb: defined 3 FK(s) on 'shoptgt'.
-importdb: updated statistics on 5 class(es) in 'shoptgt'.
-```
+Everything the dump defines is replayed from the dump's own DDL, which is more
+than it looks: **users, their password hashes and their grants all come back**.
 
-### Knowing it worked
-
-The run ends with a consolidated report — the per-class verdict, the row counts,
-and anything left for you to repair. It is the answer to "did that actually
-work?", and it is the same record `importdb.manifest` carries:
-
-```
-importdb: ===== import report: 'shoptgt' -- COMPLETE =====
-  planned data order (3 level(s)):
-      L0: [audit_log, product, region]
-      L1: [customer]
-      L2: [orders]
-  classes (5 imported, 0 skipped):
-      done     audit_log
-      done     customer
-      done     orders
-      done     product
-      done     region
-  loaded: 3008 row(s) from 1 object file(s)
-      shop_objects: 3008 row(s)
-importdb: 'shoptgt' import COMPLETE -- 5 class(es) done, 0 skipped, 0 pending, 0 FK(s) withheld; 3008 row(s) loaded. Repair records + re-add DDL in /tmp/rmcap/dump/importdb.manifest.
-```
-
-Because everything the dump defines is replayed from the dump's own DDL, that
-includes the parts a reload is easy to lose: **users, their passwords and their
-grants all come back** (`unloaddb` writes an `add_user` call, a
-`set_password_encoded_sha1` call and the `GRANT` statements into
-`<prefix>_schema`). The password is easy to believe lost, because the `add_user`
-line carries an empty one:
-
-```
-call [add_user]('LG_WRITER', '') on class [db_root] to [auser];
-call [set_password_encoded_sha1]('DE05ABA8...CAAA') on [auser];
-```
-
-The hash arrives in the *next* statement. Measured both ways in
-`tests/run_tests.sh crossversion`, which logs in as the restored account with the
-password set on the old engine, reads what it was granted, and checks that a
-wrong password is still refused.
-
-### The live display
-
-On a terminal, the phase lines above scroll past under a block that is redrawn in
-place. It answers what the printed lines cannot: which phase is running, how many
-are left, and how far into it you are.
-
-```
- importdb  tuitgt                                           load  [6/10]  00:00
-  ███████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  23%  0/4 done · 2 loading
-    tuisrc_dba.customer         ██████████████████████████████░░░░░  85%  2 MB
-    tuisrc_dba.orders           ██████░░░░░░░░░░░░░░░░░░░░░░░░░░░░  17%  18 MB
-```
-
-*(A 400,050-row import at `--degree=2`, caught a fraction of a second in — the
-elapsed clock is `MM:SS`.)*
-
-The per-file bars are real, not estimated. The loaders are separate
-`cub_admin loaddb -C` processes that report nothing until they exit, so importdb
-reads each one's file offset out of `/proc/<pid>/fdinfo` — that is the only honest
-progress signal a child of that shape has. It tracks the *read* of the object
-file, which leads the commit of its rows, so a file sits at 100% for as long as
-its last transaction takes.
-
-The display is **off whenever stdout is not a terminal**, so a pipe, a file, a
-`cron` job or a CI log gets exactly the plain output it always got. `--progress`
-forces the question either way; `NO_COLOR` is honoured.
+See [docs/output.md](docs/output.md) for a complete run, the report, the live
+display, the exceptions artifact and how the passwords travel — all verbatim.
 
 ## Referential integrity
 
@@ -258,38 +148,11 @@ importdb: defined 1 FK(s), withheld 2 on 'shopbad' (the engine rejected the data
 importdb: updated statistics on 5 class(es) in 'shopbad'.
 ```
 
-and writes the offenders to `importdb.exceptions` in the dump directory:
-
-```
-# CUBRID importdb FK re-validation exceptions (format v1)
-# Written and owned by importdb; do not edit by hand.
-# Each 'orphan' line is a child row whose foreign-key value has no matching parent primary key.
-# An operator repairs the data from this file; the FK on these edges is left undefined.
-generator: importdb
-created: 2026-08-28T02:20:49Z
-database: shopbad
-policy: fail-fast
-violated_edges: 1
-total_orphans: 2
-
-[edge] orders -> customer (fk_orders_customer)
-child_key_columns: order_id
-fk_columns: customer_id
-orphans: 2
-orphan: child[order_id=900001] fk[customer_id=777]
-orphan: child[order_id=900002] fk[customer_id=888]
-
-# CUBRID importdb FK define: the following FK(s) were NOT defined (withheld).
-# An operator repairs the referenced data, then re-runs each 'readd' statement to add the FK.
-[fk-withheld] orders -> customer (fk_orders_customer) :: ADD FOREIGN KEY rejected by the engine: 2 orphan row(s)
-readd: ALTER CLASS [dba].[orders] ADD CONSTRAINT [fk_orders_customer] FOREIGN KEY([customer_id]) WITH DEDUPLICATE=0 REFERENCES [dba].[customer] ON DELETE RESTRICT ON UPDATE RESTRICT;
-[fk-withheld] orders -> product (fk_orders_product) :: not attempted (fail-fast stopped at an earlier rejected edge)
-readd: ALTER CLASS [dba].[orders] ADD CONSTRAINT [fk_orders_product] FOREIGN KEY([product_id]) WITH DEDUPLICATE=0 REFERENCES [dba].[product] ON DELETE RESTRICT ON UPDATE RESTRICT;
-```
-
-The engine names only the first offending value and stops; importdb enumerates all
-of them. Fix the data, run the `readd:` statement, and the constraint set matches
-the dump. `--continue` attempts every edge instead of stopping at the first.
+and enumerates every offender into `importdb.exceptions`, with the DDL to add the
+withheld FK once the data is fixed — see
+[docs/output.md](docs/output.md#the-exceptions-artifact). The engine names only
+the first offending value and stops. `--continue` attempts every edge instead of
+stopping at the first.
 
 `demo/run_demo.sh` runs both paths side by side — see [`demo/`](demo/README.md).
 
@@ -297,48 +160,23 @@ the dump. `--continue` attempts every edge instead of stopping at the first.
 
 A reload is usually a *migration*: the dump is written by the version you are
 leaving and read by the version you are arriving at. importdb reads dumps from
-**CUBRID 10.2 and newer**, and the reason it can is mostly structural — the
-graph, the plan, the strip, the rebuild and the FK definition are all driven by
-a **catalog read of the target** (`src/import_graph.cpp`), not by parsing the
-dump's DDL. Whatever version wrote the schema file, once the engine has executed
-it the constraint set importdb works from is the current engine's own catalog.
+**CUBRID 10.2 and newer**, and the reason it can is mostly structural — the graph,
+the plan, the strip, the rebuild and the FK definition are all driven by a catalog
+read of the target, not by parsing the dump's DDL.
 
-Two things are not structural, and one of them needed code:
+What is not structural is the dump's own text. It is fed to the engine's own
+parser, so importdb inherits `loaddb -s`'s tolerance for old syntax exactly — with
+one exception it had to fix, because a pre-11.5 `unloaddb` names the catalog
+*views* as `CALL ... ON CLASS` targets and 11.5 moved those methods. Every 10.2
+dump of a database that owns a serial carries one, so the whole class of dumps was
+refused until importdb started rewriting them.
 
-**The dump's DDL still has to parse.** It is fed to the engine's own parser, so
-importdb inherits exactly `loaddb -s`'s tolerance for old syntax — no more, no
-less. One place that was not enough: a pre-11.5 `unloaddb` writes
+`tests/run_tests.sh crossversion` is the evidence, on a real 10.2 install: the
+data compared against the 10.2 source, and the catalog and the grant set against a
+target built from a *current* dump of the same fixtures, all byte-identical.
 
-```
-call [change_serial_owner] ('lg_seq', 'DBA') on class [db_serial];
-```
-
-and in 11.5 `db_serial` became a *view*, distinct from the `_db_serial` class
-that carries the method. `loaddb` rewrites the target in the parse tree
-(`ldr_compat_call_target`); the parse tree is not on the installed surface, so
-importdb rewrites the same three targets — `db_user`, `db_serial`,
-`db_authorization` — in the schema buffer before it is parsed, and prints the
-count. `find_user` and `login` are left alone, because the `db_user` view kept
-those. Every 10.2 dump of a database that owns a serial carries that statement,
-so without the rewrite the whole class of dumps was refused at the first serial.
-
-**The object data is `loaddb`'s to parse.** The data phase execs
-`cub_admin loaddb -C` per object file, so whatever that build accepts, importdb
-accepts. This is not a layer that can fix a `loaddb` bug, and it does not claim
-to.
-
-**Why 10.2 and not older.** The two hard 9.x → 10.x breaks are below that floor
-and are not a loader's to fix: default password hashing changed from SHA1 to SHA2
-in 10.0 (CBRD-20659), and the `reuse_oid` default changed in 10.0 (CBRD-23708).
-Both want a migration step before any loader runs.
-
-`tests/run_tests.sh crossversion` is the evidence, and it is not a smoke test.
-It builds the fixtures on a real 10.2 install, unloads them with *that* engine's
-`unloaddb`, imports the result, and then makes three byte-identical comparisons —
-the data against the 10.2 source, and the catalog and the grant set against a
-target built from a *current* dump of the same fixtures. Measured on 10.2.18
-against 11.5.0.2498: 16 classes, 91 rows, one rewritten target, identical on all
-three.
+See [docs/old-dumps.md](docs/old-dumps.md) for the floor's reasoning, the shapes
+that are guarded, and the two that cannot be.
 
 ## Performance
 
