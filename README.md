@@ -49,10 +49,10 @@ telling you exactly which rows are at fault.
 
 ![The constraint lifecycle, two ways](assets/lifecycle.svg)
 
-*Figure 1 — the same reload, two ways. Keeping the constraints live during the
-data phase costs a b-tree maintenance per row and still does not check the
-foreign keys; taking them off and building them afterwards makes the build
-itself the check.*
+*Figure 1 — the same twelve rows, two ways. Live constraints cost one b-tree
+write per row, per index, and still leave the foreign keys unchecked; stripping
+them and building afterwards makes the build itself the check — which is why the
+orphan is caught in one lane and silently kept in the other.*
 
 ## Features
 
@@ -107,6 +107,12 @@ Triggers.** The shape that matters is the middle: the schema is defined, its
 constraint set is snapshotted and then *stripped*, the data goes into bare heaps,
 and the constraints are bulk-built afterwards. Triggers are defined strictly last,
 so nothing fires during the load.
+
+![The ten phases, and where the time goes](assets/phases.svg)
+
+*Figure 2 — the pipeline, numbered the way the progress block numbers it. The
+bars are each phase's measured share of a 3.93M-row run: the two phases that
+build constraints are 80% of it, and both are serial.*
 
 Foreign keys are defined against the loaded data, which is where the engine
 validates them — `ADD CONSTRAINT ... FOREIGN KEY` builds the FK's b-tree over the
