@@ -88,6 +88,28 @@ assert_grep "and the failing target is named" "$WORK/unknown.log" \
 assert_no_grep "and the exempt db_user target is not the one blamed" "$WORK/unknown.log" \
   "this dump names \\[db_user\\]"
 
+# --------------------------- a collision the dump brought with it
+#
+# 11.2 writes synonyms before classes, and an unloaddb before Patch 7 wrote
+# classes unqualified, so a DBA synonym and a same-named class collide. The
+# engine's words for that are the words it uses for a target that is not empty,
+# and the two need opposite responses -- so the diagnosis has to say which.
+db_drop "$TGT"
+db_create "$TGT" || die "cannot re-create $TGT"
+db_start "$TGT" || die "cannot re-start $TGT"
+SYN="$WORK/dump_synonym"
+mkdir -p "$SYN" || die "cannot create $SYN"
+cp "$IT_FIXTURES_DIR/dumps/pre112p7_synonym_schema"  "$SYN/sy_schema"
+cp "$IT_FIXTURES_DIR/dumps/pre112p7_synonym_objects" "$SYN/sy_objects"
+run_import "$WORK/synonym.log" -u dba "$TGT" "$SYN"
+assert_nonzero_rc "a dump whose synonym collides with its own class is refused" "$IT_RC"
+assert_grep "the engine's own words are still reported" "$WORK/synonym.log" \
+  "Class dba.sy_t already exists"
+assert_grep "and the collision is named as the cause" "$WORK/synonym.log" \
+  "creates synonym \\[sy_t\\] and then a class of the same name"
+assert_grep "with the version that wrote it that way" "$WORK/synonym.log" \
+  "before 11.2 Patch 7"
+
 # and a dump with no pre-11.5 target must not report a rewrite at all
 sed -i 's/on class \[db_serial\]/on class [_db_serial]/' "$DUMP/cp_schema"
 db_drop "$TGT"

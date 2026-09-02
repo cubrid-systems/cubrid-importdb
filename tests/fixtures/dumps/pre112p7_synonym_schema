@@ -1,0 +1,43 @@
+-- An 11.2.6 dump, verbatim, of a database with one non-DBA-owned table and a
+-- DBA synonym of the same name. Checked in rather than generated: reproducing it
+-- needs an 11.2 install pinned BEFORE Patch 7, and the point of the fixture is
+-- that the guard runs without one.
+--
+-- What makes it collide is two decisions that are each reasonable alone. 11.2
+-- writes synonyms before classes, so a view may use one. An unloaddb before
+-- Patch 7 wrote every class unqualified and moved the owner afterwards. So the
+-- DBA synonym [sy_t] exists by the time CREATE CLASS [sy_t] asks for a
+-- DBA-owned class of that name, and the engine says
+--
+--     Class dba.sy_t already exists.
+--
+-- which is also what it says about a target that is not empty. CBRD-24974 fixed
+-- the class half in 11.2 Patch 7; RND-2698 is the migration that hit it.
+--
+-- Read by tests/cases/compat.sh. Do not reformat -- the blank-line runs are the
+-- engine's own output.
+call [add_user]('SY_USER', '') on class [db_root];
+call [find_user]('PUBLIC') on class [db_user] to [g_public];
+
+
+CREATE PRIVATE SYNONYM [DBA].[sy_t] FOR [SY_USER].[sy_t];
+
+
+CREATE CLASS [sy_t] REUSE_OID, COLLATE utf8_bin;
+call [change_owner]('sy_t', 'SY_USER') on class [db_root];
+
+
+
+
+ALTER CLASS [sy_user].[sy_t] ADD ATTRIBUTE
+       [id] integer NOT NULL,
+       [v] character varying(20) COLLATE utf8_bin;
+ALTER CLASS [sy_user].[sy_t] ADD ATTRIBUTE
+       CONSTRAINT [pk_sy_t_id] PRIMARY KEY([id]);
+
+
+
+
+
+
+COMMIT WORK;
