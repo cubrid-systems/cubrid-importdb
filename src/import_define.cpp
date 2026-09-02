@@ -331,17 +331,125 @@ namespace
     return out;
   }
 
+  /* A dump can carry a name collision of its own making. 11.2 writes synonyms
+   * before classes so a view may use one, and an unloaddb before 11.2 Patch 7
+   * also wrote every class unqualified and moved the owner afterwards
+   * (CBRD-24974). Together, `CREATE PRIVATE SYNONYM [DBA].[t]` followed by
+   * `CREATE CLASS [t]` asks for a DBA-owned `t` that the synonym already is:
+   *
+   *     Class dba.sy_t already exists.
+   *
+   * Which is what the engine also says when the target simply is not empty --
+   * the shape the refusals case asserts -- and the two need opposite responses
+   * from the operator. So say which one this is. Measured against an 11.2.6 dump.
+   *
+   * Called only on a definition failure, so a healthy run does not pay for it. */
+  std::string
+  colliding_synonym (const std::string &buf)
+  {
+    std::vector<std::string> synonyms, bare_classes;
+    size_t i = 0;
+
+    while (i < buf.size ())
+      {
+	if (buf[i] == '\'')
+	  {
+	    i = literal_end (buf, i);
+	    continue;
+	  }
+	const size_t cend = comment_end (buf, i);
+	if (cend != i)
+	  {
+	    i = cend;
+	    continue;
+	  }
+	if ((buf[i] != 'c' && buf[i] != 'C') || (i > 0 && is_ident_char (buf[i - 1])) || !kw_at (buf, i, "create"))
+	  {
+	    i++;
+	    continue;
+	  }
+
+	size_t j = skip_ws (buf, i + 6);
+	if (kw_at (buf, j, "private"))
+	  {
+	    j = skip_ws (buf, j + 7);
+	  }
+	else if (kw_at (buf, j, "public"))
+	  {
+	    j = skip_ws (buf, j + 6);
+	  }
+
+	const bool is_synonym = kw_at (buf, j, "synonym");
+	const bool is_class = kw_at (buf, j, "class") || kw_at (buf, j, "table");
+	if (!is_synonym && !is_class)
+	  {
+	    i += 6;
+	    continue;
+	  }
+
+	std::string name;
+	bool bracketed = false;
+	size_t end = 0;
+	if (!read_ident (buf, skip_ws (buf, j + (is_synonym ? 7 : 5)), name, bracketed, end))
+	  {
+	    i += 6;
+	    continue;
+	  }
+	/* `[owner].[name]`: an owner-qualified class cannot collide with a
+	 * synonym in another schema, and a synonym is named by its second half. */
+	if (end < buf.size () && buf[end] == '.')
+	  {
+	    std::string second;
+	    size_t end2 = 0;
+	    if (read_ident (buf, end + 1, second, bracketed, end2))
+	      {
+		end = end2;
+		if (is_synonym)
+		  {
+		    synonyms.push_back (second);
+		  }
+	      }
+	  }
+	else if (is_synonym)
+	  {
+	    synonyms.push_back (name);
+	  }
+	else
+	  {
+	    bare_classes.push_back (name);
+	  }
+	i = end;
+      }
+
+    for (const std::string &sn : synonyms)
+      {
+	for (const std::string &cl : bare_classes)
+	  {
+	    if (ident_is (cl, sn.c_str ()))
+	      {
+		return sn;
+	      }
+	  }
+      }
+    return std::string ();
+  }
+
   /* Quote the first catalog target the rewrite declined to move. Not the line the
    * parser reports: the buffer is parsed at open, so a parse error's line is the
    * offending one, but an EXECUTE error -- which `Method "x" not found` is --
    * reports wherever the parser finished, past the end of the file when the
    * failure is in the last statements. */
   void
-  hint_pre115_call_target (const std::vector<std::string> &unrewritten)
+  hint_old_dump_shape (const std::string &buf, const std::vector<std::string> &unrewritten)
   {
     if (!unrewritten.empty ())
       {
 	IMPORT_ERR (msg (IMPORTDB_MSG_DEFINE_PRE115_HINT), unrewritten.front ().c_str ());
+      }
+    const std::string clash = colliding_synonym (buf);
+    if (!clash.empty ())
+      {
+	IMPORT_ERR (msg (IMPORTDB_MSG_DEFINE_SYNONYM_COLLISION), clash.c_str ());
       }
   }
 
@@ -413,7 +521,7 @@ namespace
 	    db_get_parser_line_col (session, &line, &col);
 	  }
 	IMPORT_ERR (msg (IMPORTDB_MSG_DEFINE_STMT_FAILED), file_path.c_str (), line, db_error_string (3));
-	hint_pre115_call_target (unrewritten);
+	hint_old_dump_shape (buf, unrewritten);
 	if (session != NULL)
 	  {
 	    db_close_session (session);
@@ -447,7 +555,7 @@ namespace
 		      }
 		    IMPORT_ERR (msg (IMPORTDB_MSG_DEFINE_STMT_FAILED), file_path.c_str (), line,
 					   db_error_string (3));
-		    hint_pre115_call_target (unrewritten);
+		    hint_old_dump_shape (buf, unrewritten);
 		    assert (er_errid () != NO_ERROR);
 		    error = er_errid ();
 		  }
@@ -478,7 +586,7 @@ namespace
 	    int line, col;
 	    db_get_parser_line_col (session, &line, &col);
 	    IMPORT_ERR (msg (IMPORTDB_MSG_DEFINE_STMT_FAILED), file_path.c_str (), line, db_error_string (3));
-	hint_pre115_call_target (unrewritten);
+	hint_old_dump_shape (buf, unrewritten);
 	    db_close_session (session);
 	    break;
 	  }
@@ -489,7 +597,7 @@ namespace
 	    int line, col;
 	    db_get_parser_line_col (session, &line, &col);
 	    IMPORT_ERR (msg (IMPORTDB_MSG_DEFINE_STMT_FAILED), file_path.c_str (), line, db_error_string (3));
-	hint_pre115_call_target (unrewritten);
+	hint_old_dump_shape (buf, unrewritten);
 	    db_close_session (session);
 	    break;
 	  }

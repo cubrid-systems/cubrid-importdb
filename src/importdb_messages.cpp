@@ -96,6 +96,7 @@ namespace
     { 81, "importdb: rewrote %1$d pre-11.5 catalog target(s) in %2$s (ON CLASS db_user/db_serial/db_authorization -> the underlying _db_* class); the dump was written by CUBRID 11.4 or earlier.\n" },
     { 82, "importdb: '%1$s' has data_buffer_size=%2$s for %3$s of object data; the index and FOREIGN KEY builds will read from disk instead of memory. Consider data_buffer_size=%4$s or more for this import.\n" },
     { 83, "importdb: this dump names [%1$s] as a 'CALL ... ON CLASS' target. A dump written before 11.5 names the catalog views there, and importdb rewrites db_user, db_serial and db_authorization only; 10.2 is the oldest dump it reads.\n" },
+    { 84, "importdb: this dump creates synonym [%1$s] and then a class of the same name with no owner, which collides -- the failure reads as a non-empty target and is not one. An unloaddb before 11.2 Patch 7 wrote classes that way (CBRD-24974); re-dump the source with a patched engine.\n" },
   };
 }
 

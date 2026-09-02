@@ -87,6 +87,11 @@ assert_eq "the pre-existing class was not replaced" \
   "$(q1 cs "$TGT" "SELECT count(*) FROM db_attribute WHERE class_name='fv_p' AND attr_name='other'")" 1
 assert_eq "and none of the dump's other classes were left behind" \
   "$(q1 cs "$TGT" "SELECT count(*) FROM db_class WHERE class_name IN ('fv_c1','fv_c2')")" 0
+# The engine says "already exists" for a non-empty target and for a dump whose
+# own synonym collides with its own class (compat covers the second). They need
+# opposite responses, so the second diagnosis must not appear on the first.
+assert_no_grep "and it is not misreported as a synonym collision" "$WORK/nonempty.log" \
+  "creates synonym"
 
 # ------------------------------------------------------------------ HA target
 
