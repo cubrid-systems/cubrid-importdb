@@ -69,11 +69,30 @@ case "$MODE" in
   release)
     V="$ARG"
     DIR="$FTP_BASE/$V"
-    # release areas name the artifacts after the area, e.g. 11.4_latest -> 11.4-latest
+    # A `*_latest` area names its artifacts after the area: 11.4_latest holds
+    # CUBRID-11.4-latest-Linux.x86_64.tar.gz.
     NAME=$(echo "$V" | tr '_' '-')
     SRC_TGZ="cubrid-$NAME.tar.gz"
     INS_TGZ="CUBRID-$NAME-Linux.x86_64.tar.gz"
     COMMIT=""
+    # A patch-level area does not: 11.2.6 holds
+    # CUBRID-11.2.6.0790-dda2520-Linux.x86_64.tar.gz, the build number and the
+    # commit included. Pinning a patch level is the reason to reach for a release
+    # area at all -- a compatibility lane wants the version the customer is
+    # leaving, not whatever is newest on that line -- so resolve the real name
+    # from the directory when the area-derived one is not there.
+    if ! curl -sS --fail --head --max-time 60 "$DIR/$INS_TGZ" >/dev/null 2>&1; then
+      say "  $INS_TGZ is not in that area -- resolving the published name"
+      FOUND=$(curl -sS --fail --max-time 90 "$DIR/" 2>/dev/null \
+              | grep -oE 'CUBRID-[0-9][0-9A-Za-z.-]*-Linux\.x86_64\.tar\.gz' | sort -u | head -1)
+      if [ -n "$FOUND" ]; then
+        INS_TGZ="$FOUND"
+        # the source tarball of the same build differs only in case and prefix
+        SRC_TGZ="cubrid-$(echo "$FOUND" | sed 's/^CUBRID-//; s/-Linux\.x86_64\.tar\.gz$//').tar.gz"
+        COMMIT=$(echo "$FOUND" | sed -n 's/^CUBRID-[0-9][0-9.]*-\([0-9a-f]\{7,\}\)-Linux.*/\1/p')
+        say "  resolved to $INS_TGZ"
+      fi
+    fi
     ;;
 esac
 
