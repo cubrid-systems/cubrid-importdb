@@ -180,55 +180,34 @@ that are guarded, and the two that cannot be.
 
 ## Performance
 
-Measured against a **parallelism-matched** `loaddb` baseline: the baseline runs its
-per-class loads concurrently through a pool with the same bound, over the same
-object files, so the comparison isolates the constraint lifecycle instead of
-crediting importdb with the fan-out. Both arms run every phase in CS mode against
-the same running server, and both update statistics.
-
-`tests/run_tests.sh perf` **is** the measurement, and the only source for the
-numbers below — there is no separate benchmark. It builds a 393,000-row fixture
-over five object files, unloads it per class, and runs the two arms back to back
-in pairs: one unmeasured warmup pair, then alternating arm order, reporting the
-**median of the per-pair ratios**, because drift that moves both arms of a pair
-barely moves their ratio.
+Measured against a **parallelism-matched** `loaddb` baseline — the baseline fans
+out over the same object files with the same bound, so the comparison isolates the
+constraint lifecycle rather than crediting importdb with the concurrency.
+`tests/run_tests.sh perf` **is** the measurement; there is no separate benchmark.
 
 | degree | loaddb | importdb | median ratio | speedup |
 |---|---|---|---|---|
 | **1** | 5.70 s | 2.68 s | 0.481 &nbsp;(pairs 0.444 – 0.677) | **2.13× faster** |
 | **4** | 5.08 s | 1.67 s | 0.362 &nbsp;(pairs 0.327 – 0.410) | **3.04× faster** |
 
-Medians of five counted pairs each, 2026-08-28, on a 16-core Linux host at load
-0.68 against CUBRID 11.5.0.2494 — the run itself is kept at
-[`docs/perf-2026-08-28.log`](docs/perf-2026-08-28.log), so the table can be
-audited rather than taken on trust. The advantage is the constraint lifecycle at
-both degrees — the fan-out is held equal — and it grows with concurrency, from
-2.1× to 3.0×. Why it grows is not something this case measures, so treat that
-as an observation rather than an explanation.
+393,000 rows over five object files, medians of five counted pairs, on one 16-core
+Linux host. A ratio and not a stopwatch on purpose: the same baseline work has been
+measured at 3.59 s and 6.07 s within a single run. Measure your own hardware.
 
-This is a single-host trend on a shared machine, not a certified benchmark: the
-same baseline work has been measured at 3.59 s and 6.07 s within one run, which
-is exactly why the statistic is a ratio and not a stopwatch. The case prints
-every pair, so measure your own hardware rather than trusting a number from
-someone else's.
+Three things worth knowing before you rely on it:
 
-The only thing it asserts about speed is a tripwire, not a claim: the case fails
-if the median ratio exceeds 1.5, which would mean importdb had become *slower*
-than the thing it replaces. What it asserts on every pair, always, is correctness
-parity — the two arms must agree with each other and with the source on the
-catalog fingerprint and on every per-class row count. A disagreement about the
-resulting database is a hard failure whatever the clock said.
-
-Two honest caveats:
-
-- **Small dumps do not benefit.** importdb's fixed setup — catalog snapshot,
-  strip, rebuild, a per-file child process — is paid whatever the row count, so
-  below some size it is *slower* than the thing it replaces. Where that crossover
-  falls depends on your hardware and schema; measure before adopting it for small
-  reloads.
+- **Small dumps do not benefit.** The fixed setup — catalog snapshot, strip,
+  rebuild, a child process per file — is paid whatever the row count.
 - **`--degree` needs a `--datafile-per-class` dump.** The fan-out is over object
-  files, so a default single-file dump runs serially no matter what you pass —
-  silently, today.
+  files, so a default single-file dump runs serially whatever you pass.
+- **At ten times this size the shape changes.** FK definition becomes half the run
+  and `--degree` stops helping, and the cause is `data_buffer_size` rather than
+  anything importdb does. importdb warns when the page buffer is small for the
+  dump; the numbers are in the page below.
+
+See [docs/performance.md](docs/performance.md) for the method, the phase-by-phase
+breakdown at 3.93M rows, the page-buffer knee, and the three explanations that
+measured out as wrong.
 
 ## Requirements
 
@@ -395,7 +374,7 @@ paired imports at two degrees — budget an hour for the lot, or run
 `IT_SRC_CUBRID` the `crossversion` case prints a `SKIP` with that reason; every
 other case needs only the one install.
 
-- [`tests/`](tests/README.md) — 13 cases, 238 assertions outside the performance
+- [`tests/`](tests/README.md) — 13 cases, 245 assertions outside the performance
   case (which adds its own per measured pair): round-trip fidelity, every
   column-type family, dependency ordering, FK cycles, FK violations,
   `--dry-run`, `--degree`, resume after `SIGKILL`, refusals, a damaged dump, the
@@ -405,8 +384,12 @@ other case needs only the one install.
 - [`contract/`](contract/README.md) — what this repo depends on from CUBRID,
   enumerated and machine-checked: 41 static checks against an install, 16 runtime
   checks against a live database, plus a negative control that must fail.
-- [`docs/out-of-tree.md`](docs/out-of-tree.md) — how the build works against an
-  engine it does not live in, and the libstdc++ ABI question.
+- `docs/` — [`output.md`](docs/output.md) (everything the tool prints),
+  [`performance.md`](docs/performance.md) (the method, the numbers, and what
+  measured out as wrong), [`old-dumps.md`](docs/old-dumps.md) (the 10.2 floor and
+  the shapes that have guards), and
+  [`out-of-tree.md`](docs/out-of-tree.md) (how the build works against an engine
+  it does not live in, and the libstdc++ ABI question).
 
 ## License
 
