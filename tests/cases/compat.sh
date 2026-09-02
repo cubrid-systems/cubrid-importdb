@@ -66,6 +66,28 @@ assert_eq "no row picked up an underscore-prefixed catalog name" \
   "$(q1 cs "$TGT" "SELECT count(*) FROM cp_t WHERE note LIKE '%!_db!_serial%' ESCAPE '!' OR note LIKE '%!_db!_user%' ESCAPE '!'")" 0
 assert_eq "both rows loaded" "$(q1 cs "$TGT" "SELECT count(*) FROM cp_t")" 2
 
+# ------------------------------- a target the rewrite does not know about
+#
+# The three renamed views are handled; a fourth catalog name would not be, and
+# the failure it causes is an execute error whose reported line is wherever the
+# parser finished -- past the end of the file, in this fixture. So the diagnosis
+# has to name the target rather than a line.
+db_drop "$TGT"
+db_create "$TGT" || die "cannot re-create $TGT"
+db_start "$TGT" || die "cannot re-start $TGT"
+UNK="$WORK/dump_unknown"
+mkdir -p "$UNK" || die "cannot create $UNK"
+cp "$IT_FIXTURES_DIR/dumps/pre115_unknown_target_schema"  "$UNK/hn_schema"
+cp "$IT_FIXTURES_DIR/dumps/pre115_unknown_target_objects" "$UNK/hn_objects"
+run_import "$WORK/unknown.log" -u dba "$TGT" "$UNK"
+assert_nonzero_rc "an unrewritten CALL target fails the definition" "$IT_RC"
+assert_grep "and the failing target is named" "$WORK/unknown.log" \
+  "this dump names \\[db_synonym\\] as a 'CALL \\.\\.\\. ON CLASS' target"
+# The exempt find_user on db_user is one line above it in the same file. Naming
+# that would be naming the wrong statement.
+assert_no_grep "and the exempt db_user target is not the one blamed" "$WORK/unknown.log" \
+  "this dump names \\[db_user\\]"
+
 # and a dump with no pre-11.5 target must not report a rewrite at all
 sed -i 's/on class \[db_serial\]/on class [_db_serial]/' "$DUMP/cp_schema"
 db_drop "$TGT"

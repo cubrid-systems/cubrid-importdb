@@ -1,0 +1,13 @@
+-- A pre-11.5 shaped schema file whose CALL target is a catalog name importdb
+-- does NOT rewrite. It exists to make the definition failure quotable: without
+-- the hint, `Method "change_something" not found` at a line the parser picked
+-- after the fact is all an operator gets.
+--
+-- The first line is the exempt case on purpose. find_user stays on the db_user
+-- view, so a hint that named it would be naming the wrong statement -- which an
+-- earlier version of the hint did.
+call [find_user]('PUBLIC') on class [db_user] to [g_public];
+CREATE CLASS [hn_t] COLLATE utf8_bin;
+ALTER CLASS [hn_t] ADD ATTRIBUTE [id] integer NOT NULL;
+call [change_something] ('hn_t', 'DBA') on class [db_synonym];
+COMMIT WORK;

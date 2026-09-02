@@ -244,8 +244,15 @@ namespace
     return name;
   }
 
+  /* `unrewritten` collects every ON CLASS target this pass declined to move and
+   * that is not already an underlying class, db_root, or the exempt db_user --
+   * i.e. a catalog name 11.5 may have renamed without importdb knowing. A
+   * definition failure quotes it, because otherwise the failure reads as an
+   * arbitrary parse error. Collected in this loop rather than by a second scan:
+   * the exemptions are decided here, and a scan that did not know about them
+   * reported the exempt target as the suspect. */
   std::string
-  rewrite_pre115_call_targets (const std::string &s, int &rewritten)
+  rewrite_pre115_call_targets (const std::string &s, int &rewritten, std::vector<std::string> *unrewritten)
   {
     static const char *const RENAMED[] = { "db_serial", "db_authorization", "db_user" };
 
@@ -297,6 +304,11 @@ namespace
 		    const std::string m = call_method_of (s, stmt_start, i);
 		    renamed = !ident_is (m, "find_user") && !ident_is (m, "login");
 		  }
+		if (!renamed && unrewritten != NULL && target[0] != '_' && !ident_is (target, "db_root")
+		    && !ident_is (target, "db_user"))
+		  {
+		    unrewritten->push_back (target);
+		  }
 		if (renamed)
 		  {
 		    out.append (s, i, k - i);	/* "on class" and its spacing, verbatim */
@@ -317,6 +329,20 @@ namespace
 	i++;
       }
     return out;
+  }
+
+  /* Quote the first catalog target the rewrite declined to move. Not the line the
+   * parser reports: the buffer is parsed at open, so a parse error's line is the
+   * offending one, but an EXECUTE error -- which `Method "x" not found` is --
+   * reports wherever the parser finished, past the end of the file when the
+   * failure is in the last statements. */
+  void
+  hint_pre115_call_target (const std::vector<std::string> &unrewritten)
+  {
+    if (!unrewritten.empty ())
+      {
+	IMPORT_ERR (msg (IMPORTDB_MSG_DEFINE_PRE115_HINT), unrewritten.front ().c_str ());
+      }
   }
 
   /*
@@ -371,7 +397,8 @@ namespace
 
     /* a dump from 11.5 or newer has no such target and comes back unchanged */
     int rewritten = 0;
-    buf = rewrite_pre115_call_targets (buf, rewritten);
+    std::vector<std::string> unrewritten;
+    buf = rewrite_pre115_call_targets (buf, rewritten, &unrewritten);
     if (rewritten > 0)
       {
 	IMPORT_PRINT (msg (IMPORTDB_MSG_DEFINE_COMPAT_REWRITE), rewritten, file_path.c_str ());
@@ -386,6 +413,7 @@ namespace
 	    db_get_parser_line_col (session, &line, &col);
 	  }
 	IMPORT_ERR (msg (IMPORTDB_MSG_DEFINE_STMT_FAILED), file_path.c_str (), line, db_error_string (3));
+	hint_pre115_call_target (unrewritten);
 	if (session != NULL)
 	  {
 	    db_close_session (session);
@@ -419,6 +447,7 @@ namespace
 		      }
 		    IMPORT_ERR (msg (IMPORTDB_MSG_DEFINE_STMT_FAILED), file_path.c_str (), line,
 					   db_error_string (3));
+		    hint_pre115_call_target (unrewritten);
 		    assert (er_errid () != NO_ERROR);
 		    error = er_errid ();
 		  }
@@ -449,6 +478,7 @@ namespace
 	    int line, col;
 	    db_get_parser_line_col (session, &line, &col);
 	    IMPORT_ERR (msg (IMPORTDB_MSG_DEFINE_STMT_FAILED), file_path.c_str (), line, db_error_string (3));
+	hint_pre115_call_target (unrewritten);
 	    db_close_session (session);
 	    break;
 	  }
@@ -459,6 +489,7 @@ namespace
 	    int line, col;
 	    db_get_parser_line_col (session, &line, &col);
 	    IMPORT_ERR (msg (IMPORTDB_MSG_DEFINE_STMT_FAILED), file_path.c_str (), line, db_error_string (3));
+	hint_pre115_call_target (unrewritten);
 	    db_close_session (session);
 	    break;
 	  }
