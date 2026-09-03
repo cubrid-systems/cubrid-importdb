@@ -52,6 +52,7 @@
  */
 
 #include "import_fkdefine.hpp"
+#include "import_ddl_text.hpp"
 #include "import_progress.hpp"
 #include "import_validate.hpp"	/* enumerate_fk_orphans / write_fk_exceptions */
 #include "import_resume.hpp"
@@ -64,7 +65,6 @@
 #include "message_catalog.h"
 #include "util_func.h"
 
-#include <cctype>
 #include <cerrno>
 #include <cstdio>
 #include <cstring>
@@ -100,14 +100,6 @@ namespace
     return dir + "/" + name;
   }
 
-  /* True when name ends with suffix (used to pick the split FK file out of the
-   * schema apply order). */
-  bool
-  ends_with (const std::string &name, const std::string &suffix)
-  {
-    return name.size () >= suffix.size () && name.compare (name.size () - suffix.size (), suffix.size (), suffix) == 0;
-  }
-
   /* Read the whole text of a DDL file. Returns NO_ERROR, or ER_GENERIC_ERROR
    * (leaving errno set) when the file cannot be opened. */
   int
@@ -126,84 +118,6 @@ namespace
       }
     fclose (fp);
     return NO_ERROR;
-  }
-
-  std::string
-  to_upper (const std::string &s)
-  {
-    std::string u = s;
-    for (char &c : u)
-      {
-	c = (char) toupper ((unsigned char) c);
-      }
-    return u;
-  }
-
-  std::string
-  trim (const std::string &s)
-  {
-    const char *ws = " \t\r\n";
-    size_t b = s.find_first_not_of (ws);
-    if (b == std::string::npos)
-      {
-	return "";
-      }
-    size_t e = s.find_last_not_of (ws);
-    return s.substr (b, e - b + 1);
-  }
-
-  /* Split a DDL file's text into statements on the semicolon terminator (FK ADD
-   * statements carry no embedded semicolons or strings), trimming each and
-   * dropping empties. */
-  std::vector<std::string>
-  split_statements (const std::string &text)
-  {
-    std::vector<std::string> out;
-    size_t start = 0;
-    while (start < text.size ())
-      {
-	size_t semi = text.find (';', start);
-	std::string stmt = (semi == std::string::npos) ? text.substr (start) : text.substr (start, semi - start);
-	std::string t = trim (stmt);
-	if (!t.empty ())
-	  {
-	    out.push_back (t);
-	  }
-	if (semi == std::string::npos)
-	  {
-	    break;
-	  }
-	start = semi + 1;
-      }
-    return out;
-  }
-
-  /* Extract every constraint name from a statement's "CONSTRAINT [<name>]"
-   * clauses (case-insensitive on the keyword; the bracketed name keeps its
-   * original case). An FK ADD statement carries exactly one. */
-  std::vector<std::string>
-  constraint_names (const std::string &stmt)
-  {
-    std::vector<std::string> names;
-    const std::string upper = to_upper (stmt);
-    const std::string kw = "CONSTRAINT";
-    size_t pos = 0;
-    while ((pos = upper.find (kw, pos)) != std::string::npos)
-      {
-	size_t lb = stmt.find ('[', pos + kw.size ());
-	if (lb == std::string::npos)
-	  {
-	    break;
-	  }
-	size_t rb = stmt.find (']', lb + 1);
-	if (rb == std::string::npos)
-	  {
-	    break;
-	  }
-	names.push_back (stmt.substr (lb + 1, rb - lb - 1));
-	pos = rb + 1;
-      }
-    return names;
   }
 
   /*
@@ -299,32 +213,34 @@ namespace cubimport
   {
     summary = fkdefine_summary ();
 
-    /* Every FK edge keyed by its constraint name: this maps a matched statement
-     * back to its child/parent and is the authority for whether a statement is an
-     * FK define target at all (a <prefix>_schema statement whose constraint name
-     * is not here is a PK/UK/other and is skipped). */
-    std::map<std::string, const fk_edge *> fk_by_name;
+    /* Every FK edge keyed by its child class and constraint name -- not by name
+     * alone, which left one entry for a name two children shared, so the second
+     * statement resolved to the first child's edge and was then dropped as already
+     * processed. This maps a matched statement back to its child/parent and is the
+     * authority for whether a statement is an FK define target at all (a
+     * <prefix>_schema statement whose class and constraint name are not here is a
+     * PK/UK/other and is skipped). */
+    std::map<std::string, const fk_edge *> fk_by_key;
     for (const fk_edge &e : graph.fk_edges)
       {
-	fk_by_name[e.name] = &e;
+	fk_by_key[constraint_key (e.child, e.name)] = &e;
       }
 
     /* An edge whose parent PK the Rebuild phase withheld cannot be defined (no
-     * parent PK index to reference); keyed by FK name with its rebuild reason. */
+     * parent PK index to reference); keyed by child class and FK name with its
+     * rebuild reason. */
     std::map<std::string, std::string> withheld_by_rebuild;
     for (const withheld_fk &w : rebuild.withheld)
       {
-	withheld_by_rebuild[w.name] = w.reason;
+	withheld_by_rebuild[constraint_key (w.child, w.name)] = w.reason;
       }
 
     /* No prior validation to read. The engine validates as it builds: this phase
      * ATTEMPTS each edge's ADD CONSTRAINT and reads the verdict from the error
-     * code. `violated` fills in as that happens, and drives the withheld records
-     * and the exceptions artifact exactly as a separate phase's results used to.
+     * code, filling validate.edges and the withheld records as it goes.
      *
      * Under fail-fast the first rejected edge stops further attempts; the edges
      * after it are withheld as un-attempted rather than silently defined. */
-    std::map<std::string, int64_t> violated;
     bool stop_attempting = false;
 
     validate = validate_summary ();
@@ -374,26 +290,29 @@ namespace cubimport
 	     * names; a statement with no matched FK name is not an FK define
 	     * target (CREATE CLASS / column / PK/UK / COMMIT WORK) and is skipped. */
 	    const fk_edge *edge = NULL;
+	    const std::string stmt_cls = statement_class (stmt);
 	    for (const std::string &nm : constraint_names (stmt))
 	      {
-		std::map<std::string, const fk_edge *>::iterator it = fk_by_name.find (nm);
-		if (it != fk_by_name.end ())
+		std::map<std::string, const fk_edge *>::iterator it =
+			fk_by_key.find (constraint_key (stmt_cls, nm));
+		if (it != fk_by_key.end ())
 		  {
 		    edge = it->second;
 		    break;
 		  }
 	      }
-	    if (edge == NULL || !processed.insert (edge->name).second)
+	    if (edge == NULL || !processed.insert (constraint_key (edge->child, edge->name)).second)
 	      {
 		continue;
 	      }
-	    cubimport::progress::set_counter ((int) processed.size () - 1, (int) fk_by_name.size (),
+	    cubimport::progress::set_counter ((int) processed.size () - 1, (int) fk_by_key.size (),
 					      edge->child + " -> " + edge->parent);
 
 	    /* Decide clean-vs-withheld: define only an edge with its parent PK
 	     * present (not Rebuild-withheld) that FK re-validation proved clean;
 	     * otherwise withhold and record the exact re-add DDL. */
-	    std::map<std::string, std::string>::iterator rw = withheld_by_rebuild.find (edge->name);
+	    std::map<std::string, std::string>::iterator rw =
+		    withheld_by_rebuild.find (constraint_key (edge->child, edge->name));
 	    if (rw == withheld_by_rebuild.end () && !stop_attempting)
 	      {
 		/* WU-50 resume guard: an interrupted prior define may already
@@ -434,7 +353,6 @@ namespace cubimport
 			break;
 		      }
 		    const int64_t n = (int64_t) orphans.size ();
-		    violated[edge->name] = n;
 		    validate.orphans.insert (validate.orphans.end (), orphans.begin (), orphans.end ());
 		    fk_edge_result r;
 		    r.child = edge->child;
@@ -498,6 +416,28 @@ namespace cubimport
 	if (hard_error)
 	  {
 	    break;
+	  }
+      }
+
+    /* Every edge the graph names has to end up defined or withheld. The loop above
+     * is driven by the dump's statements, so an edge no statement matched is
+     * visited by nothing: its FOREIGN KEY would simply be absent from the catalog
+     * while the run reported COMPLETE. */
+    if (!hard_error)
+      {
+	for (const fk_edge &e : graph.fk_edges)
+	  {
+	    if (processed.count (constraint_key (e.child, e.name)))
+	      {
+		continue;
+	      }
+	    withheld_define w;
+	    w.child = e.child;
+	    w.parent = e.parent;
+	    w.name = e.name;
+	    w.reason = "no ADD ... FOREIGN KEY statement in the dump matched this class and name,"
+		       " so no re-add DDL was recorded: take it from the dump's schema file";
+	    summary.withheld.push_back (w);
 	  }
       }
 

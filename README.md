@@ -436,7 +436,7 @@ paired imports at two degrees — budget an hour for the lot, or run
 `IT_SRC_CUBRID` the `crossversion` case prints a `SKIP` with that reason; every
 other case needs only the one install.
 
-- [`tests/`](tests/README.md) — 14 cases, 262 assertions outside the performance
+- [`tests/`](tests/README.md) — 14 cases, 283 assertions outside the performance
   case (which adds its own per measured pair): round-trip fidelity, every
   column-type family, dependency ordering, FK cycles, FK violations,
   `--dry-run`, `--degree`, resume after `SIGKILL`, refusals, a damaged dump, the
