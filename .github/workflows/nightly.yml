@@ -210,7 +210,7 @@ jobs:
             export IT_SRC_CUBRID="$PWD/engine102/install"
           fi
           bash tests/run_tests.sh --bin="$PWD/build/cubrid-importdb" \
-            roundtrip types ordering fkcycle fkviolation dryrun degree \
+            roundtrip types ordering fkcycle dupname fkviolation dryrun degree \
             resume refusals corrupt compat crossversion
 
       - name: behaviour contract against that install
