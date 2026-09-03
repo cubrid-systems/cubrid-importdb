@@ -174,6 +174,33 @@ namespace
     return out;
   }
 
+  /* The class an ALTER statement targets: the last bracketed identifier before its
+   * ADD keyword, so unloaddb's owner-qualified "ALTER CLASS [dba].[ta] ADD" and a
+   * bare "ALTER CLASS [ta] ADD" both give the name the catalog uses. Empty when
+   * the shape does not match, which matches no stripped constraint and so leaves
+   * the reconciliation at the end of rebuild () to report it rather than dropping
+   * the constraint in silence. */
+  std::string
+  statement_class (const std::string &stmt)
+  {
+    const size_t add = to_upper (stmt).find (" ADD ");
+    if (add == std::string::npos)
+      {
+	return std::string ();
+      }
+    const size_t rb = stmt.rfind (']', add);
+    const size_t lb = rb == std::string::npos ? std::string::npos : stmt.rfind ('[', rb);
+    return lb == std::string::npos ? std::string () : stmt.substr (lb + 1, rb - lb - 1);
+  }
+
+  /* A constraint is identified by class AND name: CUBRID index names are unique
+   * per class, not per database, so two classes may each carry a [u1]. */
+  std::string
+  constraint_key (const std::string &cls, const std::string &name)
+  {
+    return cls + "\t" + name;
+  }
+
   /* Extract every constraint name from a statement's "CONSTRAINT [<name>]"
    * clauses (case-insensitive on the keyword; the bracketed name keeps its
    * original case). A DEFAULT-layout class may add its PK and a standalone UNIQUE
@@ -314,17 +341,19 @@ namespace cubimport
   {
     summary = rebuild_summary ();
 
-    /* The stripped PK/UNIQUE constraints keyed by name: this is both the DEFAULT
-     * layout's isolation filter (a <prefix>_schema statement is a rebuild target
-     * only when its constraint name is here) and the authority for each rebuilt/
-     * pending record's class + kind. FK names are excluded, so FK ADD statements
-     * in <prefix>_schema are never picked up. */
-    std::map<std::string, const stripped_constraint *> pkuk_by_name;
+    /* The stripped PK/UNIQUE constraints keyed by class and name -- not by name
+     * alone, which resolved every statement for a repeated name to whichever class
+     * was recorded last. This is both the DEFAULT layout's isolation filter (a
+     * <prefix>_schema statement is a rebuild target only when its class and
+     * constraint name are here) and the authority for each rebuilt/pending
+     * record's class + kind. FK names are excluded, so FK ADD statements are never
+     * picked up. */
+    std::map<std::string, const stripped_constraint *> pkuk_by_key;
     for (const stripped_constraint &c : stripped)
       {
 	if (c.kind == stripped_kind::PK || c.kind == stripped_kind::UNIQUE)
 	  {
-	    pkuk_by_name[c.name] = &c;
+	    pkuk_by_key[constraint_key (c.cls, c.name)] = &c;
 	  }
       }
 
@@ -381,10 +410,12 @@ namespace cubimport
 	     * PK/UK set; a statement with no matched name is not a PK/UK rebuild
 	     * (CREATE CLASS / column / serial / FK / COMMIT WORK) and is skipped. */
 	    std::vector<const stripped_constraint *> targets;
+	    const std::string stmt_cls = statement_class (stmt);
 	    for (const std::string &nm : constraint_names (stmt))
 	      {
-		std::map<std::string, const stripped_constraint *>::iterator it = pkuk_by_name.find (nm);
-		if (it != pkuk_by_name.end ())
+		std::map<std::string, const stripped_constraint *>::iterator it =
+			pkuk_by_key.find (constraint_key (stmt_cls, nm));
+		if (it != pkuk_by_key.end ())
 		  {
 		    targets.push_back (it->second);
 		  }
@@ -394,7 +425,7 @@ namespace cubimport
 		continue;
 	      }
 	    cubimport::progress::set_counter ((int) (summary.rebuilt.size () + summary.pending.size ()),
-					      (int) pkuk_by_name.size (), targets.front ()->name);
+					      (int) pkuk_by_key.size (), targets.front ()->name);
 
 	    /* WU-50 resume guard: an interrupted prior rebuild may already have
 	     * re-added this constraint. Re-adding it would fail on "already
@@ -493,6 +524,37 @@ namespace cubimport
 		    partial = true;
 		  }
 	      }
+	  }
+      }
+
+    /* The loop above is driven by the dump's statements, so a stripped constraint
+     * that no statement matched is visited by nothing: without this it would be
+     * absent from the catalog AND from both records, and the run would report
+     * COMPLETE having silently dropped it. */
+    if (!hard_error)
+      {
+	std::set<std::string> accounted;
+	for (const rebuilt_constraint &c : summary.rebuilt)
+	  {
+	    accounted.insert (constraint_key (c.cls, c.name));
+	  }
+	for (const pending_rebuild &c : summary.pending)
+	  {
+	    accounted.insert (constraint_key (c.cls, c.name));
+	  }
+	for (const std::pair<const std::string, const stripped_constraint *> &e : pkuk_by_key)
+	  {
+	    if (accounted.count (e.first))
+	      {
+		continue;
+	      }
+	    const stripped_constraint *c = e.second;
+	    const std::string reason = "no ADD CONSTRAINT statement in the dump matched this class and name";
+	    summary.pending.push_back ({ c->kind, c->cls, c->name, reason, std::string () });
+	    IMPORT_ERR (msg (IMPORTDB_MSG_REBUILD_CONSTRAINT_FAILED), rebuild_kind_keyword (c->kind),
+				   c->name.c_str (), c->cls.c_str (), reason.c_str ());
+	    withhold_child_fks (graph, c->cls, c->name, withheld_names, summary);
+	    partial = true;
 	  }
       }
 

@@ -372,7 +372,8 @@ namespace
    * built, and withheld FK edges, then one record line per item -
    *   ok: <kind>\t<class>\t<name>                    (rebuilt PK/UNIQUE)
    *   fail: <kind>\t<class>\t<name>\t<reason>         (pending-rebuild, exit-non-zero signal)
-   *   fail_readd: <ddl>                              (that pending constraint's exact re-add DDL)
+   *   fail_readd: <ddl>                              (its exact re-add DDL, or (none)
+   *                                                  when the dump held no statement for it)
    *   index: <name>                                  (deferred plain index built)
    *   index_fail: <name>\t<reason>                    (deferred plain index that did NOT build)
    *   withhold: <child>\t<parent>\t<fk>\t<reason>      (FK cascade-withheld from WU-34)
@@ -400,7 +401,7 @@ namespace
     for (const cubimport::pending_rebuild &c : rebuild.pending)
       {
 	os << "fail: " << stripped_kind_name (c.kind) << "\t" << c.cls << "\t" << c.name << "\t" << c.reason << "\n";
-	os << "fail_readd: " << c.readd_ddl << "\n";
+	os << "fail_readd: " << (c.readd_ddl.empty () ? NONE_MARKER : c.readd_ddl) << "\n";
       }
     for (const std::string &idx : rebuild.indexes)
       {
