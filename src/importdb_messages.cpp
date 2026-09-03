@@ -80,7 +80,7 @@ namespace
     { 65, "importdb: --restart: ignoring the prior manifest %1$s and importing '%2$s' from scratch.\n" },
     { 66, "importdb: emptying class '%1$s' before the resumed data phase failed: %2$s\n" },
     { 67, "importdb: emptied %1$d class(es); the resumed data phase reloads them in full and the interrupted run's partial rows are discarded.\n" },
-    { 68, "importdb: cannot read the catalog of '%1$s' for the resume guard: %2$s\n" },
+    { 68, "importdb: cannot read the catalog of '%1$s': %2$s\n" },
     { 69, "importdb: '%1$s' was already imported from this dump, but that import did not complete cleanly -- %2$d constraint(s) left un-rebuilt, %3$d FK(s) withheld, %4$d class(es) without refreshed statistics, %5$d trigger statement(s) failed. Nothing was re-run: the repair records and their re-add DDL are in %6$s, and importdb keeps exiting non-zero until they are resolved (repair the data and apply them, or --restart into an empty target).\n" },
     { 70, "importdb: commit failed: %1$s. The work of the phase that just finished was rolled back and the manifest was NOT advanced, so it still records the last durable phase -- re-run the same command to continue from there.\n" },
     { 71, "importdb: refusing to resume into '%1$s': %2$s. The manifest describes a different target than the database importdb is connected to, and a resumed run skips the definition phase -- the one step that would otherwise refuse a non-empty database. Point at the right database, or use --restart against an empty one.\n" },
@@ -96,6 +96,7 @@ namespace
     { 81, "importdb: rewrote %1$d pre-11.5 catalog target(s) in %2$s (ON CLASS db_user/db_serial/db_authorization -> the underlying _db_* class); the dump was written by CUBRID 11.4 or earlier.\n" },
     { 82, "importdb: '%1$s' has data_buffer_size=%2$s for %3$s of object data; the index and FOREIGN KEY builds will read from disk instead of memory. Consider data_buffer_size=%4$s or more for this import.\n" },
     { 83, "importdb: this dump names [%1$s] as a 'CALL ... ON CLASS' target. A dump written before 11.5 names the catalog views there, and importdb rewrites db_user, db_serial and db_authorization only; 10.2 is the oldest dump it reads.\n" },
+    { 84, "importdb: refusing to import into '%1$s': it already holds %2$d user class(es) of its own -- %3$s. importdb defines the dump's schema into an empty database and reads the dependency graph back from the target's catalog, so a class that is already there is treated as part of the import: its PK/UNIQUE/FK are dropped before the data phase and rebuilt after, and left dropped if the run is interrupted in between. Import into an empty database, or drop these classes first.\n" },
   };
 }
 
