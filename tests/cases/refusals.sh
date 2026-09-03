@@ -73,16 +73,35 @@ assert_eq "the refused run defined nothing" \
   "$(q1 cs "$TGT" "SELECT count(*) FROM db_class WHERE is_system_class='NO'")" 0
 
 # ------------------------------------------------------- non-empty target
+#
+# Two shapes, one refusal. A class whose name collides with the dump's is the
+# obvious one; a class the dump does not define is the dangerous one, because the
+# graph is read from the target's catalog and would adopt it as a node.
+
+sql_cs "$TGT" "CREATE TABLE unrelated_t (id INTEGER PRIMARY KEY, payload VARCHAR(5))" \
+  > "$WORK/unrelated.log" 2>&1
+assert_eq "the target holds a class the dump does not define" \
+  "$(q1 cs "$TGT" "SELECT count(*) FROM db_class WHERE class_name='unrelated_t'")" 1
+
+cp -r "$WORK/dump" "$WORK/dump_unrelated"
+run_import "$WORK/unrelated_import.log" -u dba "$TGT" "$WORK/dump_unrelated"
+assert_nonzero_rc "a target holding an unrelated class is refused" "$IT_RC"
+assert_grep "the pre-existing class is named" "$WORK/unrelated_import.log" \
+  "already holds 1 user class\\(es\\) of its own -- unrelated_t"
+assert_eq "its primary key was not dropped" \
+  "$(q1 cs "$TGT" "SELECT count(*) FROM db_index WHERE class_name='unrelated_t' AND is_primary_key='YES'")" 1
+assert_eq "and nothing of the dump was defined" \
+  "$(q1 cs "$TGT" "SELECT count(*) FROM db_class WHERE class_name IN ('fv_p','fv_c1','fv_c2')")" 0
 
 sql_cs "$TGT" "CREATE TABLE fv_p (id INTEGER PRIMARY KEY, other VARCHAR(5))" > "$WORK/collide.log" 2>&1
-assert_eq "the target now holds a colliding class" \
+assert_eq "the target now holds a colliding class too" \
   "$(q1 cs "$TGT" "SELECT count(*) FROM db_class WHERE class_name='fv_p'")" 1
 
 cp -r "$WORK/dump" "$WORK/dump_nonempty"
 run_import "$WORK/nonempty.log" -u dba "$TGT" "$WORK/dump_nonempty"
-assert_nonzero_rc "a non-empty target is refused" "$IT_RC"
-assert_grep "the failing definition statement is named" "$WORK/nonempty.log" \
-  "definition failed in .*_schema at line [0-9]+"
+assert_nonzero_rc "a target holding a colliding class is refused" "$IT_RC"
+assert_grep "every pre-existing class is named, in catalog order" "$WORK/nonempty.log" \
+  "already holds 2 user class\\(es\\) of its own -- fv_p, unrelated_t"
 assert_eq "the pre-existing class was not replaced" \
   "$(q1 cs "$TGT" "SELECT count(*) FROM db_attribute WHERE class_name='fv_p' AND attr_name='other'")" 1
 assert_eq "and none of the dump's other classes were left behind" \

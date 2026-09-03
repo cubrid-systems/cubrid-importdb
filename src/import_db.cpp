@@ -248,6 +248,40 @@ namespace
 		 human_bytes (objects * PAGE_BUFFER_HEADROOM).c_str ());
   }
 
+  /*
+   * True when the target holds no user class of its own; false with the
+   * diagnostic already emitted. The dependency graph is built from the TARGET's
+   * catalog rather than from the dump, so a pre-existing class becomes a node
+   * and has its constraints dropped before the data phase -- left dropped if the
+   * run is killed before the rebuild. define () refuses only colliding names.
+   */
+  bool
+  check_target_empty (const cubimport::import_set &iset)
+  {
+    cubimport::catalog_state target;
+    if (!cubimport::read_catalog_state (iset.database_name, target))
+      {
+	return false;
+      }
+    if (target.classes.empty ())
+      {
+	return true;
+      }
+
+    std::string names;
+    for (const std::string &c : target.classes)
+      {
+	if (!names.empty ())
+	  {
+	    names += ", ";
+	  }
+	names += c;
+      }
+    IMPORT_ERR (msgcat_message (MSGCAT_CATALOG_UTILS, MSGCAT_UTIL_SET_IMPORTDB, IMPORTDB_MSG_TARGET_NOT_EMPTY),
+		iset.database_name.c_str (), (int) target.classes.size (), names.c_str ());
+    return false;
+  }
+
 } // namespace
 
 /*
@@ -650,6 +684,12 @@ importdb (UTIL_FUNCTION_ARG *arg)
      * already defined and this phase is skipped. */
     if (!resuming)
       {
+	if (!check_target_empty (iset))
+	  {
+	    cubimport::session_close (false);
+	    goto error_exit;
+	  }
+
 	cubimport::progress::begin_phase (cubimport::progress::phase::DEFINE);
 	if (cubimport::define (iset, !dry_run) != cubimport::define_status::OK)
 	  {
