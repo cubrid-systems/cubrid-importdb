@@ -69,10 +69,15 @@ namespace cubimport
    * makes no server call and returns nothing. Called on the normal path after the
    * one session is committed and closed; the dry-run and hard-error paths do not
    * reach it (they print their own terminal message).
+   *
+   * catalog_verified is the caller's closing check that the target really holds
+   * what the phase records claim. False makes the verdict PARTIAL: a record that
+   * disagrees with the catalog is not a complete import.
    */
   void print_report (const import_set &iset, const dependency_graph &graph, const schedule &sched,
 		     const load_summary &load, const rebuild_summary &rebuild, const validate_summary &validate,
-		     const fkdefine_summary &fkdefine, const stats_summary &stats, const trigger_summary &triggers);
+		     const fkdefine_summary &fkdefine, const stats_summary &stats, const trigger_summary &triggers,
+		     bool catalog_verified);
 
 } // namespace cubimport
 

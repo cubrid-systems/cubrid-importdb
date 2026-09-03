@@ -89,6 +89,7 @@
 #include "import_discovery.hpp"
 #include "import_manifest.hpp"
 #include "import_resume.hpp"
+#include "import_ddl_text.hpp"
 #include "import_session.hpp"
 
 #include "dbi.h"			/* db_get_ha_server_state - the WU-53 guard */
@@ -279,6 +280,118 @@ namespace
       }
     IMPORT_ERR (msgcat_message (MSGCAT_CATALOG_UTILS, MSGCAT_UTIL_SET_IMPORTDB, IMPORTDB_MSG_TARGET_NOT_EMPTY),
 		iset.database_name.c_str (), (int) target.classes.size (), names.c_str ());
+    return false;
+  }
+
+  /* A comma-joined list for a diagnostic, in the set's own sorted order. */
+  std::string
+  join_names (const std::set<std::string> &names)
+  {
+    std::string out;
+    for (const std::string &n : names)
+      {
+	out += out.empty () ? "" : ", ";
+	out += n;
+      }
+    return out;
+  }
+
+  /* True when every class the dump defines has an object file to load from.
+   * unloaddb writes one per class in a --datafile-per-class dump, an EMPTY class
+   * included, so a class without one means the file is missing rather than that
+   * the class had no rows -- a distinction the dump does make, unlike the row
+   * counts it omits. Without this the class imports as silently empty at exit 0.
+   * The class part of the name is matched as a suffix rather than parsed out, so
+   * an owner-qualified stem and an older engine's unqualified one both satisfy it.
+   */
+  bool
+  check_object_roster (const cubimport::import_set &iset, const cubimport::dependency_graph &graph)
+  {
+    if (iset.object_kind != cubimport::object_layout::PER_CLASS)
+      {
+	return true;
+      }
+    std::set<std::string> missing;
+    for (const cubimport::graph_node &n : graph.nodes)
+      {
+	bool found = false;
+	for (const std::string &f : iset.object_files)
+	  {
+	    if (cubimport::ends_with (f, "." + n.name + "_objects")
+		|| cubimport::ends_with (f, "_" + n.name + "_objects"))
+	      {
+		found = true;
+		break;
+	      }
+	  }
+	if (!found)
+	  {
+	    missing.insert (n.name);
+	  }
+      }
+    if (missing.empty ())
+      {
+	return true;
+      }
+    IMPORT_ERR (msgcat_message (MSGCAT_CATALOG_UTILS, MSGCAT_UTIL_SET_IMPORTDB,
+				IMPORTDB_MSG_OBJECT_FILE_MISSING), iset.database_name.c_str (),
+		(int) missing.size (), join_names (missing).c_str ());
+    return false;
+  }
+
+  /* True when the catalog really holds every constraint the snapshot named, minus
+   * the ones this run recorded as NOT restored. The verdict is otherwise assembled
+   * from the phase summaries alone, so a phase that miscounts its own work reports
+   * COMPLETE over a target missing a constraint -- which is how both keying
+   * defects reached a clean exit. Asked of the catalog after the commit, which is
+   * the only authority on what the run actually left behind.
+   *
+   * One direction only: nothing here objects to a constraint the catalog has and
+   * the snapshot did not, because the deferred plain indexes are exactly that. */
+  bool
+  check_catalog_restored (const cubimport::import_set &iset, const cubimport::dependency_graph &graph,
+			  const cubimport::rebuild_summary &rb, const cubimport::fkdefine_summary &fs)
+  {
+    cubimport::catalog_state after;
+    if (!cubimport::read_catalog_state (iset.database_name, after))
+      {
+	return false;
+      }
+
+    std::set<std::string> excused;
+    for (const cubimport::pending_rebuild &c : rb.pending)
+      {
+	excused.insert (cubimport::constraint_key (c.cls, c.name));
+      }
+    for (const cubimport::withheld_define &w : fs.withheld)
+      {
+	excused.insert (cubimport::constraint_key (w.child, w.name));
+      }
+
+    std::set<std::string> absent;
+    for (const cubimport::graph_node &n : graph.nodes)
+      {
+	std::vector<std::string> named = n.constraints.unique;
+	named.insert (named.end (), n.constraints.fk.begin (), n.constraints.fk.end ());
+	if (!n.constraints.pk.empty ())
+	  {
+	    named.push_back (n.constraints.pk);
+	  }
+	for (const std::string &c : named)
+	  {
+	    if (!after.has_index (n.name, c) && !excused.count (cubimport::constraint_key (n.name, c)))
+	      {
+		absent.insert (n.name + " [" + c + "]");
+	      }
+	  }
+      }
+    if (absent.empty ())
+      {
+	return true;
+      }
+    IMPORT_ERR (msgcat_message (MSGCAT_CATALOG_UTILS, MSGCAT_UTIL_SET_IMPORTDB,
+				IMPORTDB_MSG_CATALOG_NOT_RESTORED), iset.database_name.c_str (),
+		(int) absent.size (), join_names (absent).c_str ());
     return false;
   }
 
@@ -750,6 +863,15 @@ importdb (UTIL_FUNCTION_ARG *arg)
       cubimport::progress::end_phase ();
       cubimport::print_graph_summary (graph);
 
+      /* The graph is the first point the dump's class list is known, so it is the
+       * earliest this can be asked. A --dry-run reaches here too and refuses the
+       * same way, which is the answer a dry run should give. */
+      if (!check_object_roster (iset, graph))
+	{
+	  cubimport::session_close (false);
+	  goto error_exit;
+	}
+
       /* Re-write the DEFINED manifest, now enriched with the graph snapshot
        * ([graph] section: counts + cycles + skipped classes). A resumed run
        * rewrites it too when it is itself still at DEFINED - there is no later
@@ -1151,6 +1273,11 @@ importdb (UTIL_FUNCTION_ARG *arg)
 	    cubimport::session_close (false);
 	    goto error_exit;
 	  }
+	/* Before the manifest calls this run DONE, ask the catalog whether it is.
+	 * Everything below assembles the verdict from the phase summaries, so this is
+	 * the only check that can catch a phase being wrong about its own work. */
+	const bool catalog_restored = check_catalog_restored (iset, graph, rb, fs);
+
 	if (!cubimport::write_manifest (iset, cubimport::import_phase::DONE, &graph, &sched, &stripped,
 					&summary, &rb, &vs, &fs, &ss, &ts))
 	  {
@@ -1162,7 +1289,8 @@ importdb (UTIL_FUNCTION_ARG *arg)
 	 * refreshed statistics and defined triggers (or the honestly-recorded
 	 * partial/violated result) and close the one session. A clean run ends here
 	 * with catalog == snapshot, statistics present per class, and the triggers
-	 * defined - the full serial import. */
+	 * defined - the full serial import, which check_catalog_restored () above
+	 * verified against the catalog rather than against this run's own records. */
 	/* The trigger phase's work was already committed above, so this commit has
 	 * nothing left to do - but if it somehow fails, the run must not report
 	 * success on records that look clean. */
@@ -1175,7 +1303,8 @@ importdb (UTIL_FUNCTION_ARG *arg)
 	 * the exceptions artifact an operator repairs from. A resumed run re-derives
 	 * these from the records it restored, so the verdict of a resumed import is
 	 * the verdict the whole import earned, not just its last leg. */
-	if (!closed_clean || rst == cubimport::rebuild_status::PARTIAL || vst == cubimport::validate_status::VIOLATED
+	if (!closed_clean || !catalog_restored || rst == cubimport::rebuild_status::PARTIAL
+	    || vst == cubimport::validate_status::VIOLATED
 	    || fst == cubimport::fkdefine_status::PARTIAL || sst == cubimport::stats_status::PARTIAL
 	    || tst == cubimport::trigger_status::PARTIAL)
 	  {
@@ -1200,7 +1329,7 @@ importdb (UTIL_FUNCTION_ARG *arg)
 	 * the dry-run and hard-error paths return before here and print their own
 	 * terminal message. */
 	cubimport::progress::finish ();
-	cubimport::print_report (iset, graph, sched, summary, rb, vs, fs, ss, ts);
+	cubimport::print_report (iset, graph, sched, summary, rb, vs, fs, ss, ts, catalog_restored);
       }
     }
   }
