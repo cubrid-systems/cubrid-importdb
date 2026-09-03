@@ -1,6 +1,11 @@
 build/
 build-*/
 
+# The install path in the README fetches a CUBRID source tree and install into
+# the working directory (tools/fetch_engine.sh <dest>), and the crossversion lane
+# fetches a second one; the pair is 1.5 GB of someone else's build.
+engine*/
+
 # CUBRID leaves its database artifacts in $CUBRID_DATABASES, which defaults to the
 # working directory. Scripts here are supposed to point it at a scratch dir, but
 # a stray run must not be committable: a database volume is 128 MB and GitHub
