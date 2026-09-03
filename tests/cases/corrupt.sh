@@ -126,20 +126,28 @@ note "the dump carries no per-class row count, so nothing downstream can tell a
       truncated object file from a shorter one. Closing this needs the count in
       the dump -- an unloaddb change, not an importdb one."
 
-# --------------------- 6. a missing per-class object file -- NOT caught either
+# ------------------------------ 6. a missing per-class object file -- refused
+
+# Unlike 5, this one the dump does state: unloaddb writes an object file for
+# every class, an EMPTY class included (measured -- a zero-row class gets a
+# header-only file), so a class with no file means the file is gone and not that
+# the class had no rows. The roster is therefore derivable from the class list,
+# and the check is importdb's to make rather than unloaddb's.
 
 prepare
 rm -f "$DUMP/$CHILD_OBJ"
 run_import "$WORK/missing.log" -u dba "$TGT" "$DUMP"
-assert_rc "a deleted per-class object file is NOT detected either" "$IT_RC" 0
-assert_grep "and reports COMPLETE" "$WORK/missing.log" "import COMPLETE"
-assert_eq "the class it held is silently empty" \
+assert_nonzero_rc "a deleted per-class object file is refused" "$IT_RC"
+assert_grep "the class whose file is gone is named" "$WORK/missing.log" \
+  "have no object file -- lg_child"
+assert_grep "and the refusal says what importing anyway would have done" \
+  "$WORK/missing.log" "silently empty and still report COMPLETE"
+assert_eq "no rows were loaded into the class whose file was intact either" \
+  "$(q1 cs "$TGT" "SELECT count(*) FROM lg_parent")" 0
+assert_eq "and none into the one whose file was deleted" \
   "$(q1 cs "$TGT" "SELECT count(*) FROM lg_child")" 0
-assert_eq "its schema, constraints and the other class are all there" \
-  "$(q1 cs "$TGT" "SELECT count(*) FROM lg_parent")" "$SRC_PARENT"
-note "same cause as 5: a dump has no roster of the object files it should
-      contain, so a dump missing one is a valid dump of fewer classes. Discovery
-      rosters what is present, by design -- a per-class dump legitimately omits
-      an empty class's file."
+note "the refusal lands after the definition phase, which is the first point the
+      dump's class list is known, so the target is left holding the schema and no
+      rows -- as an interrupted define would leave it."
 
 case_exit

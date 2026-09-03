@@ -117,4 +117,10 @@ assert_grep "the second edge is enumerated, not just skipped" "$WORK/dump_co/imp
 assert_eq "still no FK defined on either child" \
   "$(q1 cs "$TGT_CO" "SELECT count(*) FROM db_index WHERE class_name IN ('fv_c1','fv_c2') AND is_foreign_key='YES'")" 0
 
+# The closing catalog check must not fire here: these FKs are absent from the
+# catalog on purpose and recorded as withheld, which is what excuses them. If it
+# fired, a legitimately partial run would be reported as an importdb defect.
+assert_eq "the closing catalog check stays silent over a withheld FK" \
+  "$(cat "$WORK"/*.log | grep -c 'does not hold everything this run recorded as restored' || true)" 0
+
 case_exit

@@ -99,7 +99,8 @@ namespace cubimport
   void
   print_report (const import_set &iset, const dependency_graph &graph, const schedule &sched,
 		const load_summary &load, const rebuild_summary &rebuild, const validate_summary &validate,
-		const fkdefine_summary &fkdefine, const stats_summary &stats, const trigger_summary &triggers)
+		const fkdefine_summary &fkdefine, const stats_summary &stats, const trigger_summary &triggers,
+		bool catalog_verified)
   {
     /* A class is "pending" (an operator must finish it) when its own PK/UNIQUE
      * failed to rebuild, a validation orphan left its FK undefined, or a cascade
@@ -127,7 +128,7 @@ namespace cubimport
       }
 
     const bool partial = !rebuild.pending.empty () || validate.violated_edges > 0 || !fkdefine.withheld.empty ()
-			 || !stats.failed.empty () || triggers.failed > 0;
+			 || !stats.failed.empty () || triggers.failed > 0 || !catalog_verified;
     const char *verdict = partial ? "PARTIAL" : "COMPLETE";
 
     IMPORT_PRINT (msg (IMPORTDB_MSG_REPORT_HEADER), iset.database_name.c_str (), verdict);

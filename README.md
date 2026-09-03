@@ -74,6 +74,12 @@ against the loaded data. If the data violates one, importdb enumerates *every*
 offending row — the engine names only the first — and withholds that FK rather
 than defining a broken one.
 
+**The verdict is checked, not assumed.** Before a run calls itself complete, the
+catalog is read back and every constraint the snapshot named must actually be
+there or be recorded as withheld. The phase counters are importdb's own
+bookkeeping; this is the only step that can catch them being wrong about the
+run, and a mismatch makes the verdict PARTIAL and names what is missing.
+
 **A repair record you can act on.** `importdb.exceptions` lists each orphan by its
 primary key (or by position, for a child table without one) and carries the exact
 DDL to add the withheld FK once the data is fixed.
@@ -436,7 +442,7 @@ paired imports at two degrees — budget an hour for the lot, or run
 `IT_SRC_CUBRID` the `crossversion` case prints a `SKIP` with that reason; every
 other case needs only the one install.
 
-- [`tests/`](tests/README.md) — 14 cases, 283 assertions outside the performance
+- [`tests/`](tests/README.md) — 14 cases, 285 assertions outside the performance
   case (which adds its own per measured pair): round-trip fidelity, every
   column-type family, dependency ordering, FK cycles, FK violations,
   `--dry-run`, `--degree`, resume after `SIGKILL`, refusals, a damaged dump, the

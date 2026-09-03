@@ -103,15 +103,21 @@ HA. The guard itself is in `src/import_db.cpp` (`HA_DISABLED ()` /
 `src/import_define.cpp` is where it was measured.
 
 **A damaged dump that cannot be detected.** `corrupt` asserts, rather than
-wishes away, that a **truncated** object file and a **deleted** per-class object
-file both import at exit 0 and report `COMPLETE`. One cause covers both: an
-`unloaddb` dump carries no statement of what it contains — no per-class row
-count, no roster of the object files that should exist — so a dump missing
-content is indistinguishable from a dump *of* less content, to `loaddb` and to
+wishes away, that a **truncated** object file imports at exit 0 and reports
+`COMPLETE`. An `unloaddb` dump carries no per-class row count, so a shortened
+object file is indistinguishable from a dump *of* fewer rows, to `loaddb` and to
 importdb alike. Closing it needs the count in the dump, which is an `unloaddb`
 change. Measured: halving one 41-row object file imported 20 rows and called it
 complete. The case asserts the short count, so if upstream ever does add a
 check, this test fails and someone updates it deliberately.
+
+A **deleted** per-class object file used to be filed under the same cause and is
+not: `unloaddb` writes an object file for every class, an *empty* class included
+(measured — a zero-row class gets a header-only file), so the roster the dump
+does not state is derivable from the class list the schema does. importdb now
+refuses a per-class dump that is missing one, and `corrupt` asserts the refusal
+and the named class. The check lands after the definition phase, the first point
+the class list is known.
 
 **Cross-version coverage stops at 10.2, deliberately.** The two hard 9.x → 10.x
 breaks are below that floor and are not a loader's to fix: default password
