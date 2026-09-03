@@ -114,6 +114,20 @@ so nothing fires during the load.
 bars are each phase's measured share of a 3.93M-row run: the two phases that
 build constraints are 80% of it, and both are serial.*
 
+The first four phases are the ones the hand-scripted path has no equivalent for.
+`loaddb` takes its order from whoever typed the three invocations. importdb reads
+the target catalog once the schema is defined and derives one — which is also why
+a cycle is not a special case: FK definition is deferred for every edge, so two
+tables that reference each other land in the same level and load in one pass.
+
+![The load order is read from the schema, not typed](assets/plan.svg)
+
+*Figure 3 — Discover, Define, Graph and Plan on the shop fixture. The graph, the
+three level sets and the seventeen terminal tasks are the run's own, printed in
+[docs/output.md](docs/output.md); the cycle in the note is
+`tests/fixtures/fkcycle.sql`, where `cy_a` and `cy_b` reference each other and no
+load order satisfies both FKs.*
+
 Foreign keys are defined against the loaded data, which is where the engine
 validates them — `ADD CONSTRAINT ... FOREIGN KEY` builds the FK's b-tree over the
 existing rows and checks each key against the parent as it goes. importdb does not
@@ -150,6 +164,22 @@ The per-file bars are real, not estimated: the loaders are separate
 reads each one's file offset out of `/proc/<pid>/fdinfo`. The display is off
 whenever stdout is not a terminal, so a pipe, a file or a CI log gets exactly the
 plain output it always got.
+
+The tail of the pipeline is the other place the two paths part. `loaddb` updates
+the per-class statistics at the end of the *object* load; the index file loaded
+afterwards refreshes only the `_db_index` and `_db_indexkey` **catalog**
+statistics, so the class statistics it computed predate the secondary indexes it
+then creates. What that costs a query plan is not something measured here.
+importdb removes the question instead of answering it: `--no-statistics` on every
+loader child, and `STATS` scheduled per class after that class's rebuilds *and*
+the index build — `#12 STATS audit_log [after #0, #8]`, where `#8` is the index
+build.
+
+![The statistics are computed last, and the run shows it](assets/stats.svg)
+
+*Figure 4 — when the per-class statistics are computed in each path, and the two
+surfaces a run shows: the block redrawn in place, and the phase lines that scroll
+under it.*
 
 Everything the dump defines is replayed from the dump's own DDL, which is more
 than it looks: **users, their password hashes and their grants all come back**.
