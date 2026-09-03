@@ -130,7 +130,7 @@ assert_eq "no pseudo-class is named" \
   "$(grep -c 'part_t__p__' "$WORK/part.import.log" || true)" 0
 
 assert_eq "the refused run wrote no manifest" \
-  "$(ls "$WORK/dump_part" | grep -c importdb.manifest || true)" 0
+  "$(find "$WORK/dump_part" -name 'importdb.manifest*' | wc -l | tr -d ' ')" 0
 run_import "$WORK/part.again.log" -u dba "$TGT" "$WORK/dump_part"
 assert_grep "a second identical run gives the same refusal" "$WORK/part.again.log" \
   "already holds 3 user class\\(es\\)"

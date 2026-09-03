@@ -85,7 +85,7 @@ SPLIT_DUMP="$WORK/split"
 SPLIT_TGT=it_dup_tgt2
 unload_dump "$SRC" "$SPLIT_DUMP" --split-schema-files || die "split unloaddb failed"
 assert_eq "the split dump really separated its PK/UK files" \
-  "$(ls "$SPLIT_DUMP" | grep -cE '_schema_(pk|uk)$')" 2
+  "$(find "$SPLIT_DUMP" -name '*_schema_pk' -o -name '*_schema_uk' | wc -l | tr -d ' ')" 2
 
 db_create "$SPLIT_TGT" || die "cannot create $SPLIT_TGT"
 db_start "$SPLIT_TGT" || die "cannot start $SPLIT_TGT"
