@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regenerate the README's two animated figures into assets/.
+"""Regenerate the README's four animated figures into assets/.
 
 Both figures are written by hand at the level that matters -- geometry, wording,
 palette -- but the animation is a few dozen staggered keyframe windows, and
@@ -21,6 +21,7 @@ Three rules the figures follow, and the reason for each:
 
 Usage: tools/gen_figures.py [assets-dir]
 """
+import math
 import os
 import sys
 
@@ -444,10 +445,365 @@ def phases():
     return g.render(style)
 
 
+# ======================================================================
+#  Figure 3 -- the load order is read from the schema, not typed
+# ======================================================================
+# The shop fixture's real graph and schedule, from docs/output.md: five
+# classes, three FK edges child -> parent, one serial, three level sets and
+# seventeen terminal tasks. The cycle in the note is tests/fixtures/fkcycle.sql.
+GNODE = {                          # name: (x, y) of the chip's top-left
+    "region": (44, 142), "product": (44, 176), "audit_log": (44, 210),
+    "customer": (196, 142), "orders": (330, 176),
+}
+GFK = [("customer", "region"), ("orders", "customer"), ("orders", "product")]
+LEVELS = [["audit_log", "product", "region"], ["customer"], ["orders"]]
+DUMPFILES = [("shop_schema", 92), ("shop_objects", 100), ("shop_indexes", 100)]
+
+
+def plan():
+    W, H = 900, 372
+    A = Anim("n")
+    CW, CH = 76, 20                # a class chip
+    LX, LW = 530, 346              # the level bands
+
+    g = Svg(W, H, "The load order is read from the schema, not typed",
+            "How importdb derives the load order. Discover finds the dump's "
+            "prefix, its layout and each file's role; Define replays the dump's "
+            "own DDL into the target; Graph reads the target catalog for five "
+            "classes, three foreign-key edges child to parent and one serial; "
+            "Plan layers that graph into three level sets -- audit_log, product "
+            "and region first, then customer, then orders -- and seventeen "
+            "terminal tasks. The hand-scripted loaddb path has no such step: "
+            "its three invocations are ordered by whoever types them, and a "
+            "cycle it cannot order at all.")
+
+    g.text("hdr ink", 24, 22,
+           "importdb &#183; the load order is read from the schema, not typed")
+
+    def chip(x, y, w, h, name, cls, anim, fcls="cn ink"):
+        g.add('<rect class="%s %s" x="%g" y="%g" width="%g" height="%g" rx="4"/>'
+              % (cls, anim, x, y, w, h))
+        g.text("%s %s" % (fcls, anim), x + w / 2.0, y + h / 2.0 + 3.7, name, "middle")
+
+    def chev(x, y, anim):
+        g.add('<path class="cv %s" d="M%g,%g L%g,%g L%g,%g"/>'
+              % (anim, x - 3, y - 5, x + 3, y, x - 3, y + 5))
+
+    # --- row A: discover, then define ---------------------------------
+    g.text("sec muted", 24, 46, "1 &#183; DISCOVER")
+    g.text("sec muted", 470, 46, "2 &#183; DEFINE")
+
+    g.text("cmd muted", 24, 72, "dump/")
+    x = 76
+    for k, (name, w) in enumerate(DUMPFILES):
+        chip(x, 58, w, 20, name, "file", A.win("rise", 0.20 + 0.25 * k, 0.20 + 0.25 * k + 0.2))
+        x += w + 6
+    g.text("tag good %s" % A.win("fade", 1.00, 1.20), 24, 96,
+           "prefix &#8216;shop&#8217; &#183; single-file layout &#183; roles resolved")
+
+    chev(452, 68, A.win("fade", 1.15, 1.3))
+    chip(470, 58, 128, 20, "define &#8216;shoptgt&#8217;", "tgt",
+         A.win("rise", 1.20, 1.45), "cn good")
+    g.text("cap muted %s" % A.win("fade", 1.35, 1.55), 610, 72,
+           "from the dump&#8217;s own DDL &#8212; users, hashes, grants")
+    g.text("cap muted", 470, 96,
+           "Nothing above is passed on the command line.")
+
+    g.add('<line class="divider" x1="24" y1="106" x2="876" y2="106"/>')
+
+    # --- row B: the graph, and the layering of it ----------------------
+    g.text("sec muted", 24, 122, "3 &#183; GRAPH &#8212; READ FROM THE CATALOG")
+    g.text("sec muted", 510, 122, "4 &#183; PLAN &#8212; DERIVED")
+
+    for k, (name, (nx, ny)) in enumerate(sorted(GNODE.items())):
+        chip(nx, ny, CW, CH, name, "node", A.win("pop", 1.70 + 0.11 * k, 1.70 + 0.11 * k + 0.2))
+    g.text("tag muted %s" % A.win("fade", 2.20, 2.4), 126, 224, "serial")
+
+    def edge(a, b, anim):
+        """child -> parent, the head at the parent end; parent loads first."""
+        (ax, ay), (bx, by) = GNODE[a], GNODE[b]
+        x0, y0 = ax + (0 if ax < bx else CW), ay + CH / 2.0
+        x1, y1 = bx + (CW + 5 if ax > bx else -5), by + CH / 2.0
+        if a == "orders" and b == "product":       # route under customer
+            y0 = y1 = ay + CH / 2.0
+        dx, dy = x1 - x0, y1 - y0
+        n = math.hypot(dx, dy) or 1.0
+        ux, uy = dx / n, dy / n
+        hx, hy = x1 - ux * 8, y1 - uy * 8
+        g.add('<path class="ed %s" d="M%g,%g L%g,%g"/>' % (anim, x0, y0, hx, hy))
+        g.add('<path class="eh %s" d="M%g,%g L%g,%g L%g,%g Z"/>'
+              % (anim, x1, y1, hx - uy * 3.8, hy + ux * 3.8, hx + uy * 3.8, hy - ux * 3.8))
+
+    for k, (child, parent) in enumerate(GFK):
+        edge(child, parent, A.win("fade", 2.55 + 0.28 * k, 2.55 + 0.28 * k + 0.22))
+    g.text("cap muted %s" % A.win("fade", 3.45, 3.65), 24, 250,
+           "5 node(s), 3 FK edge(s), 0 inheritance edge(s), 1 serial &#183; "
+           "arrows are child -&gt; parent")
+
+    chev(492, 118, A.win("fade", 3.60, 3.75))
+
+    for i, level in enumerate(LEVELS):
+        y = 140 + i * 34
+        t = 3.90 + 0.55 * i
+        g.add('<rect class="band %s" x="%g" y="%g" width="%g" height="26" rx="5"/>'
+              % (A.win("growx", t, t + 0.35), LX, y, LW))
+        g.text("lvl good %s" % A.win("fade", t, t + 0.2), 514, y + 17, "L%d" % i, "end")
+        for k, name in enumerate(level):
+            chip(LX + 10 + k * (CW + 8), y + 4, CW, 18, name, "node",
+                 A.win("pop", t + 0.22 + 0.1 * k, t + 0.42 + 0.1 * k))
+    g.text("cap muted %s" % A.win("fade", 5.55, 5.75), 510, 250,
+           "3 level(s), 17 terminal task(s) &#8212; every level is parallel-eligible")
+
+    g.add('<line class="divider" x1="24" y1="266" x2="876" y2="266"/>')
+
+    # --- row C: what the operator types, either way --------------------
+    g.text("lane bad", 24, 290, "loaddb &#183; the order is yours to get right")
+    for k, f in enumerate(("-s shop_schema&#160;", "-d shop_objects",
+                           "-i shop_indexes")):
+        g.text("cmd ink %s" % A.win("rise", 6.10 + 0.18 * k, 6.10 + 0.18 * k + 0.2),
+               24, 312 + k * 17, "cubrid loaddb -C -u dba %s shoptgt" % f)
+
+    g.text("lane good", 510, 290, "CUBRID ImportDB &#183; one command")
+    g.text("cmd ink %s" % A.win("rise", 6.80, 7.0), 510, 312,
+           "cubrid-importdb -u dba shoptgt dump/")
+    for k, line in enumerate((
+            "A cycle is a non-event: cy_a and cy_b reference each other, so no",
+            "load order satisfies both FKs. Both land in L0, because FK definition",
+            "is deferred for every edge.")):
+        g.text("note muted %s" % A.win("fade", 7.10 + 0.12 * k, 7.30 + 0.12 * k),
+               510, 331 + k * 15, line)
+
+    style = """  <style>
+%(palette)s
+    .bad   { fill: #C4141E; }
+
+    .file { fill: #f4f6f8; stroke: #cfd6de; stroke-width: 1; }
+    .tgt  { fill: #f2fdf5; stroke: #9fdeb4; stroke-width: 1.2; }
+    .node { fill: #ffffff; stroke: #b9c4d0; stroke-width: 1.2; }
+    .band { fill: #f1fbf4; stroke: #9fdeb4; stroke-width: 1.2; }
+    .ed   { fill: none; stroke: #0091F8; stroke-width: 1.4; }
+    .eh   { fill: #0091F8; }
+    .cv   { fill: none; stroke: #12A03B; stroke-width: 1.8;
+            stroke-linecap: round; stroke-linejoin: round; }
+    .divider { stroke: #e2e6eb; stroke-width: 1; stroke-dasharray: 3 3; }
+
+    @media (prefers-color-scheme: dark) {
+      .bg    { fill: #0d1117; }
+      .ink   { fill: #e9edf2; }
+      .muted { fill: #98a1ad; }
+      .good  { fill: #3CE066; }
+      .bad   { fill: #FF6A73; }
+      .file { fill: #161b22; stroke: #39414c; }
+      .tgt  { fill: #0e1f14; stroke: #2c6b41; }
+      .node { fill: #14181e; stroke: #414b58; }
+      .band { fill: #0e1f14; stroke: #2c6b41; }
+      .ed   { stroke: #4DB2FF; }
+      .eh   { fill: #4DB2FF; }
+      .cv   { stroke: #3CE066; }
+      .divider { stroke: #2b313a; }
+    }
+
+%(fonts)s
+%(anim)s
+  </style>""" % {"palette": PALETTE, "anim": A.css(),
+                 "fonts": "\n".join([font("hdr", MONO, 12.5, 700),
+                                     font("sec", SANS, 9.5, 700, " letter-spacing: .7px;"),
+                                     font("lane", MONO, 12, 700),
+                                     font("cn", MONO, 10.5, 600),
+                                     font("lvl", MONO, 11, 700),
+                                     font("cmd", MONO, 10.5),
+                                     font("tag", SANS, 9.5, 600, " letter-spacing: .2px;"),
+                                     font("cap", SANS, 10.5),
+                                     font("note", SANS, 11)])}
+    return g.render(style)
+
+
+# ======================================================================
+#  Figure 4 -- the statistics are computed last, and the run shows it
+# ======================================================================
+# Left: when the per-class statistics are computed, in each path. loaddb runs
+# them at the end of the OBJECT load (load_db.c, suppressible with
+# --no-statistics); its index phase afterwards refreshes only the _db_index and
+# _db_index_key CATALOG statistics, so the class statistics it computed predate
+# the secondary indexes. importdb passes --no-statistics to every loader child
+# (import_load.cpp) and schedules STATS per class after that class's rebuilds
+# and the index build (import_plan.cpp phase 4). Right: both surfaces verbatim
+# from docs/output.md.
+LANE_A = [("-s schema", 84), ("-d objects", 92), ("-i indexes", 92)]
+LANE_B = [("load --no-statistics", 124), ("rebuild + index", 96),
+          ("FK define", 66), ("STATS", 56)]
+
+
+def stats():
+    W, H = 900, 360
+    A = Anim("s")
+    SEP, RX, RW = 456, 476, 400
+
+    g = Svg(W, H, "The statistics are computed last, and the run shows it",
+            "When the per-class statistics are computed, and what the run "
+            "prints. In the hand-scripted loaddb path they are computed at the "
+            "end of the object load, and the index file loaded afterwards "
+            "refreshes only the _db_index and _db_index_key catalog statistics "
+            "-- so the class statistics predate the secondary indexes. importdb "
+            "passes --no-statistics to every loader child and schedules STATS "
+            "per class after that class's rebuilds and the index build, so the "
+            "statistics see the finished table. On the right, the two surfaces "
+            "the run shows: a progress block redrawn in place with per-file "
+            "offsets, and the phase lines that scroll under it, ending in the "
+            "consolidated report.")
+
+    g.text("hdr ink", 24, 22,
+           "importdb &#183; the statistics are computed last, and the run shows it")
+    g.add('<line class="sep" x1="%g" y1="34" x2="%g" y2="%g"/>' % (SEP, SEP, H - 14))
+
+    def seg(x, y, w, label, cls, anim, h=22):
+        g.add('<rect class="%s %s" x="%g" y="%g" width="%g" height="%g" rx="4"/>'
+              % (cls, anim, x, y, w, h))
+        g.text("sg ink %s" % anim, x + w / 2.0, y + h / 2.0 + 3.6, label, "middle")
+
+    def lane(x0, y, segs, t0, cls, step=0.38):
+        out, x = [], x0
+        for k, (label, w) in enumerate(segs):
+            t = t0 + step * k
+            seg(x, y, w, label, cls, A.win("growx", t, t + 0.3))
+            out.append((x, x + w, t + 0.3))
+            x += w + 6
+        return out
+
+    def pin(x, y, ytxt, lines, cls, t, anchor=24):
+        a = A.win("pop", t, t + 0.22)
+        g.add('<circle class="%s %s" cx="%g" cy="%g" r="5.5"/>' % (cls, a, x, y))
+        f = A.win("fade", t + 0.1, t + 0.3)
+        g.add('<path class="lead %s" d="M%g,%g V%g H%g"/>'
+              % (f, x, y + 7, ytxt - 13, anchor + 2))
+        for k, line in enumerate(lines):
+            g.text("cap %s %s" % (cls.replace("pin", "txt"), f),
+                   anchor, ytxt + k * 15, line)
+
+    # --- left: when the statistics are computed ------------------------
+    g.text("sec muted", 24, 46, "WHEN THE PER-CLASS STATISTICS ARE COMPUTED")
+
+    g.text("lane bad", 24, 74, "loaddb &#183; schema first")
+    a = lane(24, 84, LANE_A, 0.30, "seg-a")
+    pin(a[1][1] - 10, 84, 124,
+        ["Computed here, at the end of the object load",
+         "&#8212; STATS_WITH_SAMPLING over the loaded classes."],
+        "pin-bad", 1.45)
+    g.text("cap muted %s" % A.win("fade", 1.95, 2.15), 24, 160,
+           "Then the index file runs. It refreshes _db_index and _db_indexkey")
+    g.text("cap muted %s" % A.win("fade", 2.05, 2.25), 24, 175,
+           "&#8212; the CATALOG statistics &#8212; and nothing per class.")
+    g.text("cap bad %s" % A.win("fade", 2.35, 2.55), 24, 196,
+           "So the class statistics predate the secondary indexes.")
+
+    g.text("lane good", 24, 234, "CUBRID ImportDB")
+    b = lane(24, 244, LANE_B, 2.75, "seg-b", 0.34)
+    pin(b[3][1] - 10, 244, 284,
+        ["Deferred by --no-statistics on every loader child,",
+         "then scheduled per class as a terminal task:"],
+        "pin-good", 3.95)
+    g.text("tl ink %s" % A.win("rise", 4.35, 4.55), 24, 314,
+           "#12 STATS audit_log&#160;&#160; [after #0, #8]")
+    g.text("cap good %s" % A.win("fade", 4.75, 4.95), 24, 334,
+           "#8 is the index build &#8212; the statistics see the finished table.")
+
+    # --- right: and the run shows it ----------------------------------
+    g.text("sec muted", RX, 46, "AND THE RUN SHOWS IT")
+
+    g.add('<rect class="card" x="%g" y="58" width="%g" height="88" rx="6"/>' % (RX, RW))
+    g.text("term ink %s" % A.win("fade", 0.35, 0.55), RX + 12, 76,
+           "importdb&#160;&#160;tuitgt")
+    g.text("term muted %s" % A.win("fade", 0.35, 0.55), RX + RW - 12, 76,
+           "load&#160;&#160;[6/10]&#160;&#160;00:00", "end")
+
+    def bar(x, y, w, frac, anim, h=8):
+        g.add('<rect class="trk" x="%g" y="%g" width="%g" height="%g" rx="4"/>' % (x, y, w, h))
+        g.add('<rect class="fil %s" x="%g" y="%g" width="%g" height="%g" rx="4"/>'
+              % (anim, x, y, w * frac, h))
+
+    bar(RX + 12, 86, 200, 0.23, A.win("growx", 0.50, 1.00))
+    g.text("term ink %s" % A.win("fade", 0.95, 1.15), RX + 220, 94, "23%")
+    g.text("term muted %s" % A.win("fade", 0.95, 1.15), RX + RW - 12, 94,
+           "0/4 done &#183; 2 loading", "end")
+    for k, (name, frac, size, t) in enumerate((("customer", 0.85, "2 MB", 0.85),
+                                               ("orders", 0.17, "18 MB", 1.05))):
+        y = 112 + k * 17
+        g.text("tl muted %s" % A.win("fade", t, t + 0.2), RX + 24, y + 7, name)
+        bar(RX + 96, y, 180, frac, A.win("growx", t, t + 0.55), 7)
+        g.text("tl muted %s" % A.win("fade", t + 0.5, t + 0.7), RX + RW - 12, y + 7,
+               size, "end")
+    g.text("cap muted %s" % A.win("fade", 1.75, 1.95), RX, 162,
+           "Redrawn in place. The per-file offsets are read out of")
+    g.text("cap muted %s" % A.win("fade", 1.85, 2.05), RX, 177,
+           "/proc/&lt;pid&gt;/fdinfo, so the bars are measured, not estimated.")
+
+    g.add('<rect class="card" x="%g" y="198" width="%g" height="118" rx="6"/>' % (RX, RW))
+    LINES = [("importdb: rebuilt 8 constraint(s), built 2 index(es).", "term muted", 5.20),
+             ("importdb: defined 3 FK(s) on &#8216;shoptgt&#8217;.", "term muted", 5.45),
+             ("importdb: updated statistics on 5 class(es).", "term good", 5.70),
+             ("importdb: &#8216;shoptgt&#8217; import COMPLETE &#8212; 5 class(es)",
+              "term ink", 6.10),
+             ("  done, 0 skipped, 0 FK(s) withheld; 3008 row(s).", "term ink", 6.25)]
+    for k, (line, cls, t) in enumerate(LINES):
+        g.text("%s %s" % (cls, A.win("rise", t, t + 0.2)), RX + 12, 220 + k * 19, line)
+    g.text("cap muted %s" % A.win("fade", 6.60, 6.80), RX, 334,
+           "The lines scroll under the block. Both are off whenever stdout")
+    g.text("cap muted %s" % A.win("fade", 6.70, 6.90), RX, 349,
+           "is not a terminal &#8212; a pipe or a CI log gets the plain output.")
+
+    style = """  <style>
+%(palette)s
+    .bad   { fill: #C4141E; }
+
+    .seg-a { fill: #fff5f5; stroke: #e8b4b7; stroke-width: 1.1; }
+    .seg-b { fill: #f1fbf4; stroke: #9fdeb4; stroke-width: 1.1; }
+    .pin-bad  { fill: #C4141E; }
+    .pin-good { fill: #12A03B; }
+    .txt-bad  { fill: #C4141E; }
+    .txt-good { fill: #00801F; }
+    .lead  { fill: none; stroke: #b8c0c9; stroke-width: 1; stroke-dasharray: 2 2.4; }
+    .card  { fill: #f7f9fb; stroke: #dfe3e8; stroke-width: 1.1; }
+    .trk   { fill: #e2e6eb; }
+    .fil   { fill: #12A03B; }
+    .sep   { stroke: #e2e6eb; stroke-width: 1; }
+
+    @media (prefers-color-scheme: dark) {
+      .bg    { fill: #0d1117; }
+      .ink   { fill: #e9edf2; }
+      .muted { fill: #98a1ad; }
+      .good  { fill: #3CE066; }
+      .bad   { fill: #FF6A73; }
+      .seg-a { fill: #241516; stroke: #7a3b40; }
+      .seg-b { fill: #0e1f14; stroke: #2c6b41; }
+      .pin-bad  { fill: #FF6A73; }
+      .pin-good { fill: #3CE066; }
+      .txt-bad  { fill: #FF6A73; }
+      .txt-good { fill: #3CE066; }
+      .lead  { stroke: #4a525c; }
+      .card  { fill: #14181e; stroke: #2b313a; }
+      .trk   { fill: #2b313a; }
+      .fil   { fill: #3CE066; }
+      .sep   { stroke: #2b313a; }
+    }
+
+%(fonts)s
+%(anim)s
+  </style>""" % {"palette": PALETTE, "anim": A.css(),
+                 "fonts": "\n".join([font("hdr", MONO, 12.5, 700),
+                                     font("sec", SANS, 9.5, 700, " letter-spacing: .7px;"),
+                                     font("lane", MONO, 12, 700),
+                                     font("sg", SANS, 10, 600),
+                                     font("tl", MONO, 9.5),
+                                     font("term", MONO, 10),
+                                     font("cap", SANS, 10.5)])}
+    return g.render(style)
+
+
 def main():
     out = sys.argv[1] if len(sys.argv) > 1 else os.path.join(
         os.path.dirname(os.path.abspath(__file__)), os.pardir, "assets")
-    for name, svg in (("lifecycle", lifecycle()), ("phases", phases())):
+    for name, svg in (("lifecycle", lifecycle()), ("phases", phases()),
+                      ("plan", plan()), ("stats", stats())):
         path = os.path.join(out, name + ".svg")
         with open(path, "w") as f:
             f.write(svg)
