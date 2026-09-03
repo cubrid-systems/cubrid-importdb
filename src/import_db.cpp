@@ -577,48 +577,6 @@ importdb (UTIL_FUNCTION_ARG *arg)
      * serialized graph for a second kill. */
     const bool rewrite_defined = !resuming || prior.reached == cubimport::import_phase::DEFINED;
 
-    /* WU-12 Manifest v0: write the plan/progress manifest into the importdb
-     * directory (crash-safe temp+rename). It records the rostered set, a
-     * planned-order placeholder (real order is WU-22), and the phase markers
-     * (only "discovered" reached). A write failure emits a named diagnostic
-     * and fails the run. Still no server connection or data load here. A
-     * --dry-run leaves no persistent artifact, so every manifest write below is
-     * skipped when dry_run is set - and so is EVERY write a resumed run would
-     * make before the phase it re-enters: rewriting the manifest here would
-     * erase the record the resume is reading from, leaving a second kill with
-     * nothing to resume. */
-    if (!dry_run && !resuming)
-      {
-	/* This run is about to replace the manifest. When it got here by
-	 * REFUSING to resume - a mistyped database name, --restart, an
-	 * incomplete record - the file it replaces is the only trace of the
-	 * interrupted import's progress, and losing it is the difference between
-	 * re-running and reconstructing by hand. Move it aside first. */
-	if (preserve_prior)
-	  {
-	    std::string saved;
-	    if (cubimport::preserve_manifest (iset.dump_dir, saved))
-	      {
-		IMPORT_PRINT (msgcat_message (MSGCAT_CATALOG_UTILS, MSGCAT_UTIL_SET_IMPORTDB,
-						 IMPORTDB_MSG_MANIFEST_PRESERVED), saved.c_str (),
-			 manifest_path.c_str ());
-	      }
-	    else
-	      {
-		/* Overwriting anyway would lose the record silently, which is the
-		 * whole failure this preserve step exists to prevent. */
-		IMPORT_ERR (msgcat_message (MSGCAT_CATALOG_UTILS, MSGCAT_UTIL_SET_IMPORTDB,
-						       IMPORTDB_MSG_MANIFEST_PRESERVE_FAILED), manifest_path.c_str (),
-				       strerror (errno));
-		goto error_exit;
-	      }
-	  }
-	if (!cubimport::write_manifest (iset, cubimport::import_phase::DISCOVERED))
-	  {
-	    goto error_exit;
-	  }
-      }
-
     /* WU-20/21 run on ONE shared CS-mode session (10-design.md §4 lifecycle:
      * define -> snapshot on the same open connection). Open it once here,
      * DBA-group-gated; on failure session_open() has already emitted the named
@@ -669,6 +627,63 @@ importdb (UTIL_FUNCTION_ARG *arg)
 	}
     }
 
+    /* A fresh run needs an empty target, and asking costs a catalog read, so it
+     * is asked here rather than at the Definition phase: everything above this
+     * point decides whether the run may proceed at all, and the manifest below is
+     * the record of an interrupted import. Replacing that record on behalf of a
+     * run that is about to be refused is how it gets lost. */
+    if (!resuming && !check_target_empty (iset))
+      {
+	cubimport::session_close (false);
+	goto error_exit;
+      }
+
+    /* WU-12 Manifest v0: write the plan/progress manifest into the importdb
+     * directory (crash-safe temp+rename). It records the rostered set, a
+     * planned-order placeholder (real order is WU-22), and the phase markers
+     * (only "discovered" reached). A write failure emits a named diagnostic
+     * and fails the run. The connection is open by now and every refusal above
+     * has passed, so a manifest written here belongs to a run that will at least
+     * attempt the import. A
+     * --dry-run leaves no persistent artifact, so every manifest write below is
+     * skipped when dry_run is set - and so is EVERY write a resumed run would
+     * make before the phase it re-enters: rewriting the manifest here would
+     * erase the record the resume is reading from, leaving a second kill with
+     * nothing to resume. */
+    if (!dry_run && !resuming)
+      {
+	/* This run is about to replace the manifest. When it got here by
+	 * REFUSING to resume - a mistyped database name, --restart, an
+	 * incomplete record - the file it replaces is the only trace of the
+	 * interrupted import's progress, and losing it is the difference between
+	 * re-running and reconstructing by hand. Move it aside first. */
+	if (preserve_prior)
+	  {
+	    std::string saved;
+	    if (cubimport::preserve_manifest (iset.dump_dir, saved))
+	      {
+		IMPORT_PRINT (msgcat_message (MSGCAT_CATALOG_UTILS, MSGCAT_UTIL_SET_IMPORTDB,
+						 IMPORTDB_MSG_MANIFEST_PRESERVED), saved.c_str (),
+			 manifest_path.c_str ());
+	      }
+	    else
+	      {
+		/* Overwriting anyway would lose the record silently, which is the
+		 * whole failure this preserve step exists to prevent. */
+		IMPORT_ERR (msgcat_message (MSGCAT_CATALOG_UTILS, MSGCAT_UTIL_SET_IMPORTDB,
+						       IMPORTDB_MSG_MANIFEST_PRESERVE_FAILED), manifest_path.c_str (),
+				       strerror (errno));
+		cubimport::session_close (false);
+		goto error_exit;
+	      }
+	  }
+	if (!cubimport::write_manifest (iset, cubimport::import_phase::DISCOVERED))
+	  {
+	    cubimport::session_close (false);
+	    goto error_exit;
+	  }
+      }
+
     /* Said before the load rather than after it: the operator can still stop and
      * change data_buffer_size while nothing has been written. */
     warn_if_page_buffer_small (iset);
@@ -684,12 +699,6 @@ importdb (UTIL_FUNCTION_ARG *arg)
      * already defined and this phase is skipped. */
     if (!resuming)
       {
-	if (!check_target_empty (iset))
-	  {
-	    cubimport::session_close (false);
-	    goto error_exit;
-	  }
-
 	cubimport::progress::begin_phase (cubimport::progress::phase::DEFINE);
 	if (cubimport::define (iset, !dry_run) != cubimport::define_status::OK)
 	  {

@@ -215,9 +215,10 @@ namespace cubimport
     int au_save = 0;
     AU_SAVE_AND_DISABLE (au_save);
     std::vector<std::vector<std::string>> idx_rows, class_rows;
-    /* The same class filter the Graph builder uses (import_graph.cpp), so the
-     * two inventories are keyed identically - unqualified class_name from the
-     * same catalog views. */
+    /* The same class filter the Graph builder uses - the catalog view's own
+     * predicate plus is_partition_pseudo () - so the two inventories are keyed
+     * identically: unqualified class_name from the same catalog views, and no
+     * partition pseudo-class in either. */
     int error = collect_rows ("SELECT class_name, index_name FROM db_index", 2, idx_rows);
     error = error ? error : collect_rows ("SELECT class_name FROM db_class "
 					  "WHERE is_system_class='NO' AND class_type='CLASS'", 1, class_rows);
@@ -235,7 +236,10 @@ namespace cubimport
       }
     for (const std::vector<std::string> &r : class_rows)
       {
-	st.classes.insert (r[0]);
+	if (!is_partition_pseudo (r[0]))
+	  {
+	    st.classes.insert (r[0]);
+	  }
       }
     return true;
   }

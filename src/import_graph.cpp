@@ -56,14 +56,6 @@ namespace
     return msgcat_message (MSGCAT_CATALOG_UTILS, MSGCAT_UTIL_SET_IMPORTDB, id);
   }
 
-  /* True when a class name is a partition pseudo-class ("<table>__p__<part>"),
-   * which the graph excludes (nodes, inheritance rows). */
-  bool
-  is_partition_pseudo (const std::string &name)
-  {
-    return name.find ("__p__") != std::string::npos;
-  }
-
   /* Read one column of the current tuple as a string: NULL -> "", a string
    * domain via db_get_string, an integer via db_get_int; anything else -> "". */
   std::string
@@ -297,6 +289,12 @@ namespace
 
 namespace cubimport
 {
+
+  bool
+  is_partition_pseudo (const std::string &name)
+  {
+    return name.find ("__p__") != std::string::npos;
+  }
 
   build_graph_status
   build_graph (const import_set &iset, bool skip_object_classes, dependency_graph &graph)

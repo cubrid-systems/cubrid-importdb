@@ -100,12 +100,42 @@ assert_eq "the target now holds a colliding class too" \
 cp -r "$WORK/dump" "$WORK/dump_nonempty"
 run_import "$WORK/nonempty.log" -u dba "$TGT" "$WORK/dump_nonempty"
 assert_nonzero_rc "a target holding a colliding class is refused" "$IT_RC"
-assert_grep "every pre-existing class is named, in catalog order" "$WORK/nonempty.log" \
+assert_grep "every pre-existing class is named, in sorted order" "$WORK/nonempty.log" \
   "already holds 2 user class\\(es\\) of its own -- fv_p, unrelated_t"
 assert_eq "the pre-existing class was not replaced" \
   "$(q1 cs "$TGT" "SELECT count(*) FROM db_attribute WHERE class_name='fv_p' AND attr_name='other'")" 1
 assert_eq "and none of the dump's other classes were left behind" \
   "$(q1 cs "$TGT" "SELECT count(*) FROM db_class WHERE class_name IN ('fv_c1','fv_c2')")" 0
+
+# --------------------------------------------- what the refusal must NOT say
+#
+# A partitioned table's pseudo-classes are in db_class and cannot be dropped, so
+# naming them would inflate the count and hand the operator an impossible
+# instruction. And a refused run has touched nothing, so it must leave the dump
+# directory as it found it -- otherwise the next identical run reads its own
+# leftover manifest and reports an interrupted import that never started.
+
+sql_cs "$TGT" "CREATE TABLE part_t (id INTEGER, CONSTRAINT pk_p PRIMARY KEY(id))
+               PARTITION BY RANGE(id) (PARTITION p0 VALUES LESS THAN (10))" \
+  > "$WORK/part.log" 2>&1
+assert_eq "the catalog does report a partition pseudo-class" \
+  "$(q1 cs "$TGT" "SELECT count(*) FROM db_class WHERE class_name LIKE 'part_t__p__%'")" 1
+
+cp -r "$WORK/dump" "$WORK/dump_part"
+run_import "$WORK/part.import.log" -u dba "$TGT" "$WORK/dump_part"
+assert_nonzero_rc "the refusal still fires" "$IT_RC"
+assert_grep "and counts the partitioned table once" "$WORK/part.import.log" \
+  "already holds 3 user class\\(es\\)"
+assert_eq "no pseudo-class is named" \
+  "$(grep -c 'part_t__p__' "$WORK/part.import.log" || true)" 0
+
+assert_eq "the refused run wrote no manifest" \
+  "$(ls "$WORK/dump_part" | grep -c importdb.manifest || true)" 0
+run_import "$WORK/part.again.log" -u dba "$TGT" "$WORK/dump_part"
+assert_grep "a second identical run gives the same refusal" "$WORK/part.again.log" \
+  "already holds 3 user class\\(es\\)"
+assert_eq "and never calls it an interrupted import" \
+  "$(grep -c 'cannot be resumed' "$WORK/part.again.log" || true)" 0
 
 # ------------------------------------------------------------------ HA target
 

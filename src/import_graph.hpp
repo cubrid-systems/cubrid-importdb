@@ -155,6 +155,12 @@ namespace cubimport
    */
   void print_graph_summary (const dependency_graph &graph);
 
+  /* True for a partition pseudo-class -- the "<class>__p__<partition>" rows CUBRID
+   * keeps in db_class. It is not a class an import defines, loads or refuses over,
+   * so every inventory of "the target's user classes" has to drop it, which is why
+   * this is not private to the graph builder. */
+  bool is_partition_pseudo (const std::string &name);
+
 } // namespace cubimport
 
 #endif /* _IMPORT_GRAPH_HPP_ */
