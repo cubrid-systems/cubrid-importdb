@@ -19,11 +19,12 @@ name: nightly
 
 on:
   # A push to main gets the full build and suite, because nothing else on main
-  # does. contract.yml runs here too, but its utility-building job is gated to
-  # schedule/dispatch, so before this line the only thing a merge to main was
-  # checked against was the static surface -- and two branches that each built
-  # fine merged into a main that did not compile at all (the enum entry each of
-  # them appended was terminal, and git kept both without a conflict).
+  # does. contract.yml runs here too, but it never builds the utility -- it
+  # checks the surface statically and the behaviour of an install. So before this
+  # line the only thing a merge to main was checked against was that static
+  # surface, and two branches that each built fine merged into a main that did
+  # not compile at all (the enum entry each of them appended was terminal, and
+  # git kept both without a conflict).
   push:
     branches: [main]
   schedule:
@@ -142,8 +143,10 @@ jobs:
         run: |
           set -euo pipefail
           # the libstdc++ ABI is detected from the library, not assumed -- the
-          # published binaries use the pre-C++11 std::string ABI and a modern GCC
-          # does not, which otherwise fails on every cubload:: symbol
+          # published binaries link libstdc++ statically with the pre-C++11
+          # std::string ABI, so libcubridcs re-exports those symbols and this
+          # binary resolves its own strings against them; a modern GCC defaults
+          # to the other ABI and the result is one binary with two string ABIs
           cmake -S . -B build \
                 -DCMAKE_BUILD_TYPE=RelWithDebInfo \
                 -DCUBRID_SOURCE_DIR="$PWD/engine/src" \

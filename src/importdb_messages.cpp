@@ -23,7 +23,6 @@ namespace
 
   const entry importdb_messages[] = {
     { 10, "importdb: '--exceptions-table' is reserved for a future release.\n" },
-    { 11, "importdb: '--degree=%1$d' is not yet supported; clamping to serial (degree 1).\n" },
     { 12, "importdb: rostered %1$s dump (prefix '%2$s') from %3$s\n    schema:   %4$s\n    objects:  %5$s\n    indexes:  %6$s\n    triggers: %7$s\n" },
     { 13, "importdb: no unloaddb dump found in '%1$s' (expected <prefix>_schema or <prefix>_schema_class plus <prefix>_objects).\n" },
     { 14, "importdb: dump in '%1$s' has no schema artifact; expected %2$s_schema (default) or %2$s_schema_class with %2$s_schema_info (split).\n" },

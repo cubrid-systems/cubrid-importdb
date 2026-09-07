@@ -21,29 +21,25 @@
  *
  * After the Strip phase (WU-30) leaves bare heaps, the Load phase pours each
  * table's object data into those heaps by REUSING the loaddb data-load path -
- * loaddb source is not touched. It drives the load through loaddb's PUBLIC
- * client stubs only (network_interface_cl.h + load_common.hpp):
- *   loaddb_init (load_args)     - set up the server-side load session + the
- *                                 intra-table worker pool (reused as-is),
- *   cubload::split ()           - parse one object file into batches, invoking
- *                                 the class_handler / batch_handler,
- *   loaddb_install_class () / loaddb_load_batch () - the handlers' bodies,
- *   loaddb_fetch_status ()      - drain stats / errors,
- *   loaddb_destroy () / loaddb_interrupt () - tear down / abort.
- * This mirrors load_db.c's ldr_server_load () + load_object_file (), dropping
- * the loaddb-only concerns (logddl, -S/SA paths, estimated size, storage-order
- * compare, statistics update - statistics are rebuilt in a later WU).
+ * loaddb source is not touched. It spawns `cub_admin loaddb -C` per object file
+ * through a bounded pool, so the load the children run IS loaddb's, driven by
+ * loaddb's own binary rather than by calls into it.
  *
- * Loading is serial across tables (inter-table parallelism is M4/WU-40; only
- * the intra-table worker pool is reused here). Each object file is loaded in
- * its own loaddb session (loaddb_init .. loaddb_destroy), which matches loaddb's
- * one-file-per-session model and keeps split ()'s per-file class-id numbering
- * independent: a SINGLE-layout dump has one object file carrying every class
- * (one session loads them all), a PER_CLASS-layout dump has one file per class
- * (one session each). Object-valued classes excluded by --skip-object-classes
+ * Each object file is loaded by its own child, which matches loaddb's
+ * one-file-per-session model: a SINGLE-layout dump has one object file carrying
+ * every class (one child loads them all), a PER_CLASS-layout dump has one file
+ * per class (one child each), and only the latter has anything for --degree to
+ * spread over. Object-valued classes excluded by --skip-object-classes
  * (graph.skipped_classes) are not loaded. No constraint is rebuilt and no FK is
  * validated/defined here (later WUs); after this phase the target holds data in
  * bare heaps.
+ *
+ * There was an in-process path here once, driving loaddb's client stubs
+ * (loaddb_init / cubload::split / loaddb_install_class / loaddb_load_batch /
+ * loaddb_destroy) through network_interface_cl.h + load_common.hpp. It was
+ * removed in 50e2411; see the note on load_data () below and the longer version
+ * at the top of import_load.cpp for why. Nothing here includes those headers any
+ * more.
  */
 
 #ifndef _IMPORT_LOAD_HPP_

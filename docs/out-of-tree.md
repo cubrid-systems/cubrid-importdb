@@ -168,11 +168,16 @@ source and library come from the same commit.
 
 The 16 sources need nothing. What remains:
 
-- **the serial data path.** `import_load.cpp` drives loaddb in process via
-  `loaddb_init` / `loaddb_load_batch`. In the source model that is *fine* — the
-  headers are right there — so this is no longer a blocker, but it does mean the
-  utility keeps reaching into `src/loaddb`, which the CI path filter reflects.
 - **the CLI surface.** `cubrid importdb …` becomes `cubrid-importdb …` unless the
   engine keeps its one row in the utility map. Worth a decision, not work.
 - **the engine-side removal PR**, which is what makes the split real rather than
   additive.
+
+The serial data path used to be on this list: `import_load.cpp` drove loaddb in
+process through `loaddb_init` / `loaddb_load_batch`, which meant the utility
+reached into `src/loaddb` at compile time. That path was removed in 50e2411 and
+the entry with it — the data phase now execs `cub_admin loaddb -C`, and nothing
+here includes a loaddb header. `src/loaddb/**` stays in the CI path filter for a
+different reason: two *behavioural* contracts still live there, the `HA_DISABLED`
+gate and `ldr_compat_call_target`, both enumerated in
+[`contract/surface_manifest.txt`](../contract/surface_manifest.txt).
