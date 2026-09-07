@@ -134,11 +134,11 @@ importdb: rostered default dump (prefix 'idbdemo_src') from <dump-dir>
     indexes:  idbdemo_src_indexes
 importdb: defined 'idbdemo_new'.
 importdb: dependency graph for 'idbdemo_new' -- 5 node(s), 3 FK edge(s), 0 inheritance edge(s), 1 serial(s)
-importdb: schedule for 'idbdemo_new' -- data phase 3 level(s), 20 terminal task(s)
+importdb: schedule for 'idbdemo_new' -- data phase 3 level(s), 17 terminal task(s)
 importdb: stripped 11 constraint(s) from 'idbdemo_new'.
-importdb: loaded 3008 row(s) from 1 object file(s) into 'idbdemo_new'; ...
-importdb: rebuilt 8 constraint(s) and built 2 index(es) on 'idbdemo_new'; ...
-importdb: FK re-validation of 'idbdemo_new' passed -- 3 edge(s) validated clean, ...
+importdb: loaded 3008 row(s) from 1 object file(s) into 'idbdemo_new'.
+importdb: rebuilt 8 constraint(s) and built 2 index(es) on 'idbdemo_new'.
+importdb: every FOREIGN KEY on 'idbdemo_new' was accepted by the engine -- 3 edge(s) clean, 0 skipped (parent key withheld).
 importdb: defined 3 FK(s) on 'idbdemo_new'.
 importdb: updated statistics on 5 class(es) in 'idbdemo_new'.
 ```
@@ -179,15 +179,22 @@ What to look for: the level sets and the terminal task list.
   terminal tasks (in a valid execution order):
       #0  REBUILD_PK      audit_log (pk_audit_log)
       ...
-      #9  FK_VALIDATE     customer -> region (fk_customer_region)   [after #4, #7]
-      #12 FK_DEFINE       customer -> region (fk_customer_region)   [after #4, #7, #9]
+      #8  BUILD_INDEX     <deferred indexes: idbdemo_src_indexes>
+      #9  FK_DEFINE       customer -> region (fk_customer_region)   [after #4, #7]
+      ...
+      #16 STATS           region   [after #4, #7, #8]
 ```
 
 Those levels come from the **catalog**, not from the dump layout: this is the
 single-file dump, and it plans exactly the same three levels a per-class dump
-would. The `[after #N]` edges are the interesting part — every `FK_DEFINE` is
-predicated on its own `FK_VALIDATE` and on the rebuild of the parent key it
-points at. That ordering is what scenario 3 exercises.
+would. The `[after #N]` edges are the interesting part — every `FK_DEFINE` waits
+on the rebuild of the parent key it points at, and every `STATS` waits on the
+index build. That ordering is what scenario 3 exercises.
+
+There is no separate `FK_VALIDATE` task: the engine validates the rows while it
+builds the FOREIGN KEY (`btree_load_check_fk`), so one task both defines and
+validates, and the anti-join that enumerates offenders runs only for an edge the
+engine rejects. See `src/import_plan.cpp`.
 
 Asserted: exit 0, three levels printed, all three `FK_DEFINE` tasks carry
 prerequisites — and then that the target database has **zero** user classes
@@ -261,10 +268,10 @@ its own schema, which is exactly the dump you get from a database that was
 ### (b) importdb detects it, enumerates it, and withholds the FK
 
 ```
-importdb: FK re-validation of 'idbdemo_fknew' found violations -- 1 edge(s) violated, 2 orphan row(s) total; ...
+importdb: 'idbdemo_fknew' has referential violations -- 1 FOREIGN KEY(s) rejected by the engine, 2 orphan row(s) total; ...
 importdb: defined 2 FK(s), withheld 1 on 'idbdemo_fknew' ...
   withheld FKs (1) -- defined after the data is repaired:
-      orders -> customer (fk_orders_customer) :: FK re-validation found 2 orphan row(s)
+      orders -> customer (fk_orders_customer) :: ADD FOREIGN KEY rejected by the engine: 2 orphan row(s)
         re-add: ALTER CLASS [dba].[orders] ADD CONSTRAINT [fk_orders_customer] ...
 ```
 
@@ -367,6 +374,15 @@ the result does not change.
 
 ## Notes for whoever maintains this
 
+- **The transcripts on this page are quoted, not generated.** The script asserts
+  the facts around the text — exit status, counts, and specific strings like
+  `at degree 4.` — not the paragraphs, so this page can drift from the tool
+  without anything failing, and it has: it carried `20 terminal task(s)` when the
+  same schema printed 17, and quoted an `FK_VALIDATE` task and two message
+  wordings that no longer exist. If this page disagrees with what your build
+  prints, **the build is right**. Run `demo/run_demo.sh -k` and read the logs it
+  keeps rather than trusting what is written here. Every transcript below was
+  re-captured from such a run.
 - `csql -i file.sql` exits **0 even when a statement inside it fails**, so the
   script greps those logs for `^ERROR`. `csql -c '<stmt>'` *does* propagate the
   failure in its exit status, and the script relies on that where it wants a
@@ -395,6 +411,5 @@ the result does not change.
   push GitHub refuses outright, so do not remove either half of that.
 - The data phase runs `cub_admin loaddb -C` children at every degree, serial
   being degree 1. The wording the demo greps for is
-  `loaded N row(s) from M object file(s) into '<db>'` at degree 1, and the same
-  line with `at degree N (inter-table parallel` appended when the fan-out is
-  real.
+  `loaded N row(s) from M object file(s) into '<db>'.` at degree 1, and the same
+  line with ` at degree N.` appended when the fan-out is real.
