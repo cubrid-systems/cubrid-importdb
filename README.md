@@ -322,7 +322,8 @@ export CUBRID="$PWD/engine/install"
 cmake -S . -B build -DCUBRID_SOURCE_DIR="$PWD/engine/src" -DCUBRID_BUILD_DIR="$PWD/engine/build"
 cmake --build build -j"$(nproc)"
 
-build/cubrid-importdb            # prints the usage
+build/cubrid-importdb --help     # prints the usage
+build/cubrid-importdb --version  # the CUBRID it was built against
 ```
 
 Configuring the engine and building only its header producers takes about 20
@@ -395,6 +396,8 @@ valid options:
     --progress=WHEN             live progress display: auto (default; on when stdout is a
                                 terminal), always, or never
     --exceptions-table=NAME     reserved for a future release
+    -h, --help                  print this and exit
+    --version                   print the CUBRID this binary was built against
 ```
 
 The target database must exist, be **running**, and be **empty** of user classes.
