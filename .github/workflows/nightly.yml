@@ -219,6 +219,7 @@ jobs:
       - name: behaviour contract against that install
         run: |
           set -euo pipefail
+          bash contract/check_surface.sh --source "$PWD/engine/src"
           bash contract/check_surface.sh --install "$CUBRID"
           CONTRACT_CHECK_BIN="$PWD/build/contract_check" bash contract/run.sh
 

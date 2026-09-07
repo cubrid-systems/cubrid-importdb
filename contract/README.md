@@ -22,17 +22,25 @@ So it is written down here, and machine-checked.
 | `contract_check.cpp` | runtime half. 16 checks against a live database: catalog reads, the SQL substitutes, the parameter reads, the `cub_admin` argv contract |
 | `run.sh` | creates a scratch database + dump, runs `contract_check`, cleans up. `CONTRACT_NEGATIVE=1` runs it as a non-DBA, which must fail |
 
-## The two lanes
+## Where this runs
 
-**This repo** (`.github/workflows/contract.yml`) runs both halves against the
-CUBRID installs it claims to support. Catches drift even when nobody touches
-either repo.
+Here, and only here. importdb is an extension of CUBRID, not a part of it, so
+watching the engine is this repo's job and the engine repo carries nothing on
+importdb's behalf.
 
-**The engine repo** (`.github/workflows/upstream-guard.yml.for-cubrid-repo`,
-copy it there) runs the static half on every PR that touches a path which could
-move the surface — about 30 seconds, no build — and the runtime half nightly,
-where a build already has to happen. An engine change that breaks the utility
-fails on the engine PR, which is the only place it is cheap to fix.
+Both workflows fetch the engine as a **(source, install) pair from one published
+build**, which is what lets one lane run both halves of the check:
+
+| | mode | what it reads | what it catches |
+|---|---|---|---|
+| `contract.yml` | `--source` + `--install` | `engine/src` and `engine/install` | daily, against the newest 11.5 nightly |
+| `nightly.yml` | `--source` + `--install` | the same pair | the same, plus the functional suite and the runtime contract |
+
+Source mode is the cheaper and stricter half: it reads the engine's install rules
+and headers straight out of the tree, in seconds, and it is the only half that can
+see a replicated constant change or a source-shape contract break. Install mode is
+the only half that can see a symbol get mangled or a header stop being installed.
+Neither subsumes the other, which is why the manifest marks each line's mode.
 
 ## Why the negative control exists
 

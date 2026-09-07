@@ -5,8 +5,10 @@
 #   --install <dir>   an installed CUBRID  ($CUBRID)     -- header/decl/export/grep-free
 #   --source  <dir>   a CUBRID source tree               -- install/decl/const/grep
 #
-# Source mode is the cheap guard the engine repo can run on every PR: it reads
-# the install rules and the headers straight out of the tree, in seconds.
+# Source mode is the cheap half: it reads the install rules and the headers
+# straight out of the tree, in seconds, with nothing built and no server. Both
+# workflows here run it against the engine/src that fetch_engine.sh leaves beside
+# the install, so the two modes cover one published build between them.
 set -uo pipefail
 MODE=; ROOT=
 while [ $# -gt 0 ]; do
