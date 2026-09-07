@@ -415,7 +415,10 @@ importdb (UTIL_FUNCTION_ARG *arg)
   int degree;
   bool continue_on_error;
   bool skip_object_classes;
-  bool dry_run;
+  /* error_exit reads this one, and the two argument-parsing failures above jump
+   * there before it would otherwise be assigned -- so it is initialised here for
+   * the same reason database_name and dump_dir are. */
+  bool dry_run = false;
   bool restart;
   bool allow_ha;
   const char *progress_opt;
