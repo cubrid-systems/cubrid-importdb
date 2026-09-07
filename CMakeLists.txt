@@ -26,10 +26,22 @@ list (APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 #
 #  The published CUBRID binaries (releases and the nightly daily build) are built
 #  for maximum portability: an old glibc target, a statically linked libstdc++,
-#  and a compiler configured to the gcc4-compatible std::string ABI. A modern GCC
-#  defaults to the __cxx11 ABI, so every engine C++ interface that passes a
-#  std::string then fails to link -- concretely the cubload:: entry points that
-#  import_load.cpp's serial data path uses.
+#  and a compiler configured to the gcc4-compatible std::string ABI.
+#
+#  Because that libstdc++ is linked INTO libcubridcs, the library re-exports the
+#  old-ABI std::string symbols -- and this binary resolves its own against them.
+#  Measured on 11.5.0.2513: the matched build needs 27 `Ss` (old-ABI) basic_string
+#  symbols and zero __cxx11 ones. Built with a modern GCC's default instead, it
+#  asks the system libstdc++ for 22 __cxx11 symbols while still taking 6
+#  basic_string symbols from libcubridcs -- one binary, two string ABIs. That
+#  links, and it even passes a smoke test, which is exactly what makes it worth
+#  preventing rather than discovering later.
+#
+#  Note this is NOT about the cubload:: entry points any more. Those went with the
+#  in-process load path (50e2411) and the binary references none of them today;
+#  the coupling that remains is this file's own std::string usage. The probe below
+#  still reads loaddb_install_class because it is a convenient symbol that states
+#  the ABI in its mangling, not because anything calls it.
 #
 #  Do not key this off a compiler version or a distro: the build root can change
 #  under us and the guess would fail silently. Ask the LIBRARY. loaddb_install_class
@@ -38,7 +50,8 @@ list (APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 #     ...ERbRSs                        the pre-C++11 (gcc4) ABI
 #     ...ERbRNSt7__cxx1112basic_string the __cxx11 ABI
 #
-#  The plain db_* API is extern "C" and immune; only the C++ interfaces care.
+#  The plain db_* API is extern "C" and immune. What is not immune is std::string,
+#  which this repo uses throughout.
 # ---------------------------------------------------------------------------
 function (cubrid_detect_cxx_abi out_var lib)
   set (${out_var} OFF PARENT_SCOPE)

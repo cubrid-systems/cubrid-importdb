@@ -335,9 +335,11 @@ time: the build bakes `$CUBRID/lib` and `$CUBRID/cci/lib` into the binary's
 else puts on the loader path.
 
 > The build also reads the engine library's libstdc++ ABI with `nm` and matches it.
-> Published CUBRID binaries use the pre-C++11 `std::string` ABI; a modern compiler
-> does not. You should never have to think about this, but if a link ever fails on
-> `cubload::` symbols, `-DFORCE_OLD_CXX_ABI=ON` is the override.
+> Published CUBRID binaries link libstdc++ statically and use the pre-C++11
+> `std::string` ABI, so `libcubridcs` re-exports those symbols and this binary
+> resolves its own strings against them; a modern compiler defaults to the other
+> ABI. You should never have to think about this, but if a link ever fails on
+> `std::basic_string` symbols, `-DFORCE_OLD_CXX_ABI=ON` is the override.
 
 ## Usage
 
