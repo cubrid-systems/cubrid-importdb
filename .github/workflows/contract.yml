@@ -100,7 +100,17 @@ jobs:
                 -DCMAKE_CXX_FLAGS="-Wall -Wextra -Werror"
           cmake --build build -j"$(nproc)"
 
-      - name: static surface check
+      # Both halves, against the pair fetch_engine.sh downloaded from one build.
+      # Source mode used to run nowhere: it existed for a guard meant to live in
+      # the engine repo, which was never installed and does not belong there --
+      # importdb is an extension, so watching the engine is this repo's job. The
+      # 14 checks only source mode can make (install rules, the replicated
+      # constant, the source-shape contracts) were therefore unverified, and one
+      # of them had been failing.
+      - name: static surface check -- source
+        run: bash contract/check_surface.sh --source "$PWD/engine/src"
+
+      - name: static surface check -- install
         run: bash contract/check_surface.sh --install "$CUBRID"
 
       - name: runtime contract
