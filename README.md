@@ -9,7 +9,7 @@ the reload faster than the schema-first script it replaces — and it makes the 
 actually check the foreign keys, which that script never does.
 
 ```
-cubrid-importdb -u dba mydb /path/to/dump
+cubrid-importdb -u dba newdb /path/to/dump
 ```
 
 That is the entire operator interface for a full-database reload: point it at the
@@ -22,9 +22,9 @@ directory `unloaddb` wrote, and it works out the rest.
 `unloaddb` hands you a directory. Reloading it is on you:
 
 ```sh
-cubrid loaddb -C -u dba -s mydb_schema  mydb    # schema first, so every
-cubrid loaddb -C -u dba -d mydb_objects mydb    # PK/UNIQUE/FK is live and
-cubrid loaddb -C -u dba -i mydb_indexes mydb    # maintained per row
+cubrid loaddb -C -u dba -s mydb_schema  newdb   # schema first, so every
+cubrid loaddb -C -u dba -d mydb_objects newdb   # PK/UNIQUE/FK is live and
+cubrid loaddb -C -u dba -i mydb_indexes newdb   # maintained per row
 ```
 
 Three invocations for a small database, and the ordering is yours to get right.
@@ -339,6 +339,43 @@ else puts on the loader path.
 > does not. You should never have to think about this, but if a link ever fails on
 > `cubload::` symbols, `-DFORCE_OLD_CXX_ABI=ON` is the override.
 
+## Your first import
+
+Nothing above creates a database. importdb imports *into* a target that already
+exists, is running, and holds no user class — so that target is yours to make,
+and the dump is written by the source database's own engine, not by this tool.
+
+```sh
+# The runtime environment. Not the same as the build: importdb execs
+# `cub_admin loaddb` itself, so the children need the engine on PATH and on the
+# loader path, and every command below needs the same CUBRID_DATABASES.
+IMPORTDB="$PWD"                                  # this clone, for the binary below
+export CUBRID="$PWD/engine/install"
+export CUBRID_DATABASES="$HOME/cubrid-databases" # holds databases.txt, the registry
+export PATH="$CUBRID/bin:$PATH"
+export LD_LIBRARY_PATH="$CUBRID/lib:$CUBRID/cci/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+mkdir -p "$CUBRID_DATABASES" && cd "$CUBRID_DATABASES"
+
+# The dump. -S needs the source server stopped, and unloaddb writes into the
+# current directory, so give it one of its own.
+mkdir -p /dumps/mydb
+( cd /dumps/mydb && cubrid unloaddb -S -u dba mydb )
+
+# The target. createdb writes its volumes into the current directory and
+# registers that path in databases.txt, so run it where the volumes should live
+# -- not in the clone. Give it the same locale as the source database, because
+# the dump's DDL carries the source's charset and collation.
+cubrid createdb newdb en_US.utf8
+cubrid server start newdb
+
+"$IMPORTDB/build/cubrid-importdb" -u dba newdb /dumps/mydb
+```
+
+`mydb` and `newdb` are two different databases throughout, and have to be: `-S`
+wants the source stopped, the target must be running and empty, and importdb
+refuses a target that already holds a user class — naming it. You cannot reload
+a database on top of itself.
+
 ## Usage
 
 ```
@@ -372,28 +409,31 @@ that is a withheld FK, an un-rebuilt constraint, a failed statistics update or a
 trigger that would not define. To tell those apart, read the final report line,
 which names each category, and `importdb.manifest`, which records them.
 
+Throughout, `mydb` is the database the dump came *from* and `newdb` is the
+target being imported *into*. They are never the same database.
+
 ```sh
 # produce the dump in the first place (server down for -S; -C works with it up)
 cubrid unloaddb -S -u dba mydb            # writes mydb_{schema,objects,indexes} here
 
 # the common case
-cubrid-importdb -u dba mydb /dumps/mydb
+cubrid-importdb -u dba newdb /dumps/mydb
 
 # see the plan without touching anything
-cubrid-importdb -u dba --dry-run mydb /dumps/mydb
+cubrid-importdb -u dba --dry-run newdb /dumps/mydb
 
 # parallel: the dump must be per-class for --degree to have anything to spread over
 cubrid unloaddb -S -u dba --datafile-per-class mydb
-cubrid-importdb -u dba --degree=4 fresh_target /dumps/mydb
+cubrid-importdb -u dba --degree=4 newdb /dumps/mydb
 
 # a dump you suspect: report every violated edge instead of stopping at the first
-cubrid-importdb -u dba --continue mydb /dumps/mydb
+cubrid-importdb -u dba --continue newdb /dumps/mydb
 
 # resume after a kill -- the same command, nothing new to type
-cubrid-importdb -u dba mydb /dumps/mydb
+cubrid-importdb -u dba newdb /dumps/mydb
 
 # plain output on a terminal (scripts and pipes get it without asking)
-cubrid-importdb -u dba --progress=never mydb /dumps/mydb
+cubrid-importdb -u dba --progress=never newdb /dumps/mydb
 ```
 
 `unloaddb` writes into the current directory and `-S` needs the server stopped,
@@ -421,6 +461,18 @@ you cannot reload a database on top of itself.
 - **It does not replicate to an HA standby.** The bare-heap load produces no row
   replication, so an `ha_mode=on` target is refused unless you pass `--allow-ha`
   and rebuild the standby from a backup afterwards.
+- **It cannot tell a truncated object file from a shorter dump.** An `unloaddb`
+  dump carries no per-class row count, so nothing downstream — `loaddb` or
+  importdb — can tell a file that was cut short from one that legitimately holds
+  fewer rows. A truncated object file therefore imports at **exit 0** and reports
+  `COMPLETE`: measured, halving one 41-row object file loaded 20 rows and called
+  it done. So verify the dump before importing it, and compare row counts against
+  the source afterwards — the report's `loaded:` block gives one count per object
+  file, which is per class for a `--datafile-per-class` dump and a single total
+  for a default one. Closing this needs the count written into the dump, which is
+  an `unloaddb` change, not an importdb one. A *deleted* per-class object file is
+  a different case and **is** refused, naming the class: the schema states the
+  class list, so a missing file is derivable where a short one is not.
 
 ## Development
 

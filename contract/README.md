@@ -1,11 +1,17 @@
 # The upstream contract
 
-This repo builds **only** against what CUBRID installs — `$CUBRID/include`,
+What this directory checks is the **installed** surface — `$CUBRID/include`,
 `$CUBRID/lib/libcubridcs`, and `$CUBRID/bin` for the utilities the data phase
-execs. It never references a CUBRID source tree. That is what makes an
-independent repo possible, and it is also the thing that can quietly break.
+execs. `contract_check` itself is built against nothing else, which is why it
+needs no source tree and can run against any install.
 
-So the dependency is written down and machine-checked.
+That is narrower than the repo. `cubrid-importdb` is compiled against the
+engine's own headers out of a source tree and a configured build tree — see
+[Requirements](../README.md#requirements) — so the installed surface is the
+*runtime* dependency, not the whole of it. It is also the half that can quietly
+break without anyone touching this repo.
+
+So it is written down here, and machine-checked.
 
 ## Files
 

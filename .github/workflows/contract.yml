@@ -1,7 +1,14 @@
 # cubrid-importdb -- this repo's own lane.
 #
-# Three jobs, cheapest first. The point of the split is that the static job
-# needs no CUBRID at all, so a broken manifest fails in seconds.
+# Two jobs, cheapest first. The point of the split is that the static job needs
+# no CUBRID at all, so a broken manifest fails in seconds.
+#
+# There used to be a third, build-against-develop, which built the whole engine
+# from source to answer "does the utility still compile against develop HEAD".
+# It is gone; nightly.yml answers the same question against the newest published
+# nightly in about twelve minutes, and does more with the answer -- it runs the
+# functional suite and the behaviour contract too, where the develop lane only
+# ran a smoke test. See the commit that removed it for what it cost to find out.
 name: contract
 
 on:
@@ -42,69 +49,7 @@ jobs:
           done < contract/surface_manifest.txt
           exit $bad
 
-  # ------------------------------- 2. does it still build against develop HEAD?
-  build-against-develop:
-    name: build against cubrid develop
-    runs-on: ubuntu-24.04
-    needs: manifest
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    timeout-minutes: 180
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          path: utility
-
-      - name: app token for the engine repo
-        id: token
-        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1
-        with:
-          app-id: ${{ secrets.ENGINE_READ_APP_ID }}
-          private-key: ${{ secrets.ENGINE_READ_APP_PRIVATE_KEY }}
-          owner: cubrid-systems
-          repositories: cubrid
-
-      - name: checkout the engine at develop
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          repository: cubrid-systems/cubrid
-          ref: develop
-          token: ${{ steps.token.outputs.token }}
-          submodules: recursive
-          path: engine
-
-      - name: build deps
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq cmake ninja-build ccache gcc g++             libncurses-dev bison flex openjdk-17-jdk-headless
-
-      - name: ccache
-        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4
-        with:
-          path: ~/.ccache
-          key: engine-ccache-${{ github.run_id }}
-          restore-keys: engine-ccache-
-
-      - name: build + install the engine
-        working-directory: engine
-        run: |
-          export CCACHE_DIR=~/.ccache
-          export PATH=/usr/lib/ccache:$PATH
-          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-                -DCMAKE_INSTALL_PREFIX="$PWD/install.out"
-          cmake --build build -j"$(nproc)"
-          cmake --install build
-
-      - name: build the utility and import something
-        run: |
-          export CUBRID="$PWD/engine/install.out"
-          cmake -S utility -B utility/build \
-                -DCUBRID_SOURCE_DIR="$PWD/engine" \
-                -DCUBRID_BUILD_DIR="$PWD/engine/build" \
-                -DCMAKE_CXX_FLAGS="-Wall -Wextra"
-          cmake --build utility/build -j"$(nproc)"
-          bash utility/tools/smoke.sh "$PWD/utility/build/cubrid-importdb"
-
-  # ------------------------------------------- 3. behaviour against an install
+  # ------------------------------------------- 2. behaviour against an install
   contract:
     name: contract (${{ matrix.engine }})
     runs-on: ubuntu-24.04
@@ -176,20 +121,16 @@ jobs:
           fi
           echo "negative control failed the contract, as required"
 
-  # ------------------------------------------- 3. did upstream move under us?
+  # ------------------------------------------------------------------ verdict
   report:
     name: summary
     runs-on: ubuntu-24.04
-    needs: [manifest, contract, build-against-develop]
+    needs: [manifest, contract]
     if: always()
     steps:
       - name: verdict
         run: |
-          echo "manifest              : ${{ needs.manifest.result }}"
-          echo "contract (install)    : ${{ needs.contract.result }}"
-          echo "build against develop : ${{ needs.build-against-develop.result }}"
+          echo "manifest           : ${{ needs.manifest.result }}"
+          echo "contract (install) : ${{ needs.contract.result }}"
+          [ "${{ needs.manifest.result }}" = success ] || exit 1
           [ "${{ needs.contract.result }}" = success ] || exit 1
-          case "${{ needs.build-against-develop.result }}" in
-            success|skipped) ;;
-            *) exit 1;;
-          esac

@@ -1,11 +1,16 @@
 # FindCUBRID -- locate an installed CUBRID to build against.
 #
-# The whole point of this repo is that it needs only what CUBRID *installs*:
+# Used by the BUILD_CONTRACT branch only. contract_check needs nothing but what
+# CUBRID *installs*, which is what lets it run against any install:
 #   $CUBRID/include   the client headers (dbi.h and friends)
 #   $CUBRID/lib       libcubridcs
 #   $CUBRID/bin       cub_admin, which the data phase execs
 #
-# No CUBRID source tree is referenced. Set CUBRID (env) or -DCUBRID_ROOT=.
+# This module references no CUBRID source tree. The utility does: BUILD_UTILITY
+# additionally requires CUBRID_SOURCE_DIR and CUBRID_BUILD_DIR, and takes its
+# include paths from cmake/EngineFlags.cmake, not from here.
+#
+# Set CUBRID (env) or -DCUBRID_ROOT=.
 #
 # Defines: CUBRID_FOUND, CUBRID_INCLUDE_DIR, CUBRID_CS_LIBRARY, CUBRID_BIN_DIR
 #          and the imported target CUBRID::cs

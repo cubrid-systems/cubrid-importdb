@@ -80,11 +80,16 @@ they are the assumptions the code rests on:
 The measurement behind that table is in the vault:
 `plan/importdb/NOTES_out_of_tree_feasibility.md`.
 
-## Build
+## Building only the contract check
+
+The second row of the Build modes table above, in full. `-DBUILD_UTILITY=OFF` is
+not optional here: it defaults ON, and without it the configure step stops on a
+missing `CUBRID_SOURCE_DIR`, because the utility does need a source tree even
+though this half does not.
 
 ```sh
 export CUBRID=/path/to/cubrid            # an install, not a source tree
-cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo
+cmake -S . -B build -DBUILD_UTILITY=OFF -DCMAKE_BUILD_TYPE=RelWithDebInfo
 cmake --build build -j
 CONTRACT_CHECK_BIN=$PWD/build/contract_check bash contract/run.sh
 ```
