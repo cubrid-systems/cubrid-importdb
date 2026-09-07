@@ -154,6 +154,14 @@ jobs:
           cmake --build build -j"$(nproc)" 2>&1 | tee /tmp/build.log
           test -x build/cubrid-importdb
 
+      # A copy relocation on an engine variable pins the binary to the engine
+      # build it was linked against, and the failure is a segfault inside the
+      # engine rather than a refusal. One did, until 2026-09-08. Cheap to check,
+      # and the check is discriminating: it fails on the binary from before that
+      # fix. See tools/check_relocs.sh for the whole story.
+      - name: no engine data symbol is copy-relocated
+        run: bash tools/check_relocs.sh build/cubrid-importdb
+
       - name: import something (the functional test)
         run: |
           set -euo pipefail
