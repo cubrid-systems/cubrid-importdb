@@ -15,6 +15,26 @@ cubrid-importdb -u dba newdb /path/to/dump
 That is the entire operator interface for a full-database reload: point it at the
 directory `unloaddb` wrote, and it works out the rest.
 
+**In a hurry?** [Requirements](#requirements) → [Install](#install) →
+[Your first import](#your-first-import). Everything before those three is the
+argument for the tool, and you can skip it.
+
+<details>
+<summary>Contents</summary>
+
+**Why** — [The problem](#the-problem) · [Features](#features) ·
+[How it works](#how-it-works) · [Referential integrity](#referential-integrity) ·
+[Reading an older engine's dump](#reading-an-older-engines-dump) ·
+[Performance](#performance)
+
+**Using it** — [Requirements](#requirements) · [Install](#install) ·
+[Your first import](#your-first-import) · [Usage](#usage) ·
+[What it does not do](#what-it-does-not-do)
+
+**Working on it** — [Development](#development) · [License](#license)
+
+</details>
+
 ---
 
 ## The problem
@@ -267,7 +287,8 @@ Three things worth knowing before you rely on it:
 - **Small dumps do not benefit.** The fixed setup — catalog snapshot, strip,
   rebuild, a child process per file — is paid whatever the row count.
 - **`--degree` needs a `--datafile-per-class` dump.** The fan-out is over object
-  files, so a default single-file dump runs serially whatever you pass.
+  files, so a default single-file dump runs serially whatever you pass — the run
+  says so rather than leaving you to work it out from the timings.
 - **At ten times this size the shape changes.** FK definition becomes half the run
   and `--degree` stops helping, and the cause is `data_buffer_size` rather than
   anything importdb does. importdb warns when the page buffer is small for the

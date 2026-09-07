@@ -17,9 +17,9 @@
 #                          to create; importdb enumerates the offenders and
 #                          withholds that FK
 #   4  parallelism         --degree=4 twice: on the default dump, where there is
-#                          one object file and the degree quietly clamps to
-#                          serial, and on a --datafile-per-class dump, where the
-#                          fan-out actually happens. The dump layout is what
+#                          one object file, the degree clamps to serial and the
+#                          run says so, and on a --datafile-per-class dump, where
+#                          the fan-out actually happens. The dump layout is what
 #                          buys parallelism, not the flag.
 #
 # Every database and directory it touches is its own; nothing pre-existing is
@@ -614,11 +614,15 @@ chk "--degree=4 on the default dump: exit status" "$pard_rc" "0"
 chk "  ... object files available to fan out over" \
     "$(object_file_count "$DUMP_S4A" "$SRC")" "1"
 chk "  ... no 'at degree' line: it clamped to serial" \
-    "$(grep -c 'at degree' "$LOGS/importdb.par.default.log")" "0"
+    "$(grep -c 'at degree [0-9]' "$LOGS/importdb.par.default.log")" "0"
+chk "  ... and it SAID the dump bounded it" \
+    "$(grep -c "asked for more parallelism than this dump can use" \
+       "$LOGS/importdb.par.default.log")" "1"
 srv_stop "$PARD"
-echo "     The flag was accepted and did nothing. With one object file there is"
-echo "     one child to spawn, so the degree collapses to 1 and the data phase"
-echo "     reports the plain serial line. Nothing warns you about this."
+echo "     The flag was accepted and could not be honoured. With one object file"
+echo "     there is one child to spawn, so the degree collapses to 1 and the data"
+echo "     phase reports the plain serial line -- and says why, which is the whole"
+echo "     of what --degree can tell you before you re-dump."
 
 step "4b  --degree=4 on the --datafile-per-class dump (five object files)"
 fresh_dump_copy "$DUMP_PC" "$DUMP_S4B" || give_up "cannot copy the dump"

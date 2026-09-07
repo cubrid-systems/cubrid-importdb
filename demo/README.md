@@ -327,14 +327,19 @@ things depending on how the dump was taken. The scenario runs it both ways.
 
 ```
     objects:  single (idbdemo_src_objects)
-importdb: loaded 3008 row(s) from 1 object file(s) into 'idbdemo_pardef'; ...
+importdb: '--degree=4' asked for more parallelism than this dump can use: it has 1 object file(s), so the data phase is bounded to 1. ...
+importdb: loaded 3008 row(s) from 1 object file(s) into 'idbdemo_pardef'.
 ```
 
-Exit 0, and the flag did nothing. One object file means one child, so the
-degree collapses to 1 and the data phase prints the plain serial line — no
-`at degree` in the output at all. Asserted: exit 0, one object file, and
-**zero** `at degree` lines. Nothing warns you about this, which is the reason
-it is in the demo rather than in a footnote.
+Exit 0, and the flag could not be honoured. One object file means one child, so
+the degree collapses to 1 and the data phase prints the plain serial line — no
+`at degree N` in the output at all — and the run says why before it does.
+Asserted: exit 0, one object file, **zero** `at degree N` lines, and the line
+that explains the bound.
+
+That last assertion is newer than this scenario. The clamp used to be silent,
+which is what made this worth a demo rather than a footnote; the demo now checks
+that the explanation is there, so the silence cannot come back.
 
 **4b — on the `--datafile-per-class` dump (five object files):**
 

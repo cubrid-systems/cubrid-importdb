@@ -56,6 +56,30 @@ for d in 1 2 4; do
   db_drop "$tgt"
 done
 
+# ---------------------------------------------------------------- the clamp
+# The object-file fan-out bounds the degree, and it used to do that in silence:
+# --degree=8 here ran at 5, and --degree=8 on a DEFAULT dump ran serially, with
+# nothing in the output saying why. The README and the demo both explain the
+# surprise in prose; the tool now says it itself. A degree that FITS must still
+# say nothing, which is the half that would rot first.
+tgt=it_deg_clamp
+dump="$WORK/dump_clamp"
+cp -r "$WORK/dump" "$dump"
+db_create "$tgt" 128M 64M || die "cannot create $tgt"
+db_start "$tgt" || die "cannot start $tgt"
+run_import "$WORK/clamp.log" -u dba --degree=8 "$tgt" "$dump"
+assert_rc "a degree above the fan-out still imports clean" "$IT_RC" 0
+assert_grep "and the run says the dump bounded it" "$WORK/clamp.log" \
+  "'--degree=8' asked for more parallelism than this dump can use: it has 5 object file\\(s\\), so the data phase is bounded to 5"
+assert_grep "and it did run at the fan-out, not above it" "$WORK/clamp.log" \
+  "at degree 5\\."
+db_drop "$tgt"
+
+assert_no_grep "a degree that fits says nothing about the fan-out" "$WORK/d4.log" \
+  "asked for more parallelism"
+assert_no_grep "and neither does serial" "$WORK/d1.log" \
+  "asked for more parallelism"
+
 assert_same "degree 1 and degree 2 agree on the final catalog" "$WORK/d1.catalog" "$WORK/d2.catalog"
 assert_same "degree 1 and degree 4 agree on the final catalog" "$WORK/d1.catalog" "$WORK/d4.catalog"
 assert_same "degree 1 and degree 2 agree on the final rows" "$WORK/d1.data" "$WORK/d2.data"
