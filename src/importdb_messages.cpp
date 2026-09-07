@@ -99,6 +99,7 @@ namespace
     { 85, "importdb: refusing to import into '%1$s': the dump is per-class, but %2$d class(es) it defines have no object file -- %3$s. unloaddb writes one object file per class, an empty class included, so a class without one means the file is gone rather than that the class had no rows. Importing anyway would leave those classes silently empty and still report COMPLETE. Restore the missing file(s), or unload again.\n" },
     { 86, "importdb: '%1$s' does not hold everything this run recorded as restored: %2$d constraint(s) the snapshot names are absent from the catalog and were not recorded as withheld -- %3$s. The phase records are therefore wrong about this run, which is a defect in importdb rather than in the dump; the data and the constraints that ARE present stay committed. importdb exits non-zero.\n" },
     { 87, "importdb: this dump creates synonym [%1$s] and then a class of the same name with no owner, which collides -- the failure reads as a non-empty target and is not one. An unloaddb before 11.2 Patch 7 wrote classes that way (CBRD-24974); re-dump the source with a patched engine.\n" },
+    { 88, "importdb: '--degree=%1$d' asked for more parallelism than this dump can use: it has %2$d object file(s), so the data phase is bounded to %3$d. The fan-out is the dump layout, not the flag -- one object file per class comes from `unloaddb --datafile-per-class`, and a default dump writes a single file for the whole database.\n" },
   };
 }
 

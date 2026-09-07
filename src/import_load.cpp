@@ -435,6 +435,15 @@ namespace cubimport
     if (!files.empty () && (size_t) deg > files.size ())
       {
 	deg = (int) files.size ();
+	/* Say so. This clamp used to be silent, which made --degree look broken
+	 * on the dump an operator is most likely to have: unloaddb writes ONE
+	 * object file unless asked otherwise, so --degree=8 on a default dump
+	 * runs serially and printed nothing to explain why. The README and the
+	 * demo both spend paragraphs on this; the tool can spend one line. */
+	if (degree > 1)
+	  {
+	    IMPORT_WARN (msg (IMPORTDB_MSG_DEGREE_ABOVE_FANOUT), degree, (int) files.size (), deg);
+	  }
       }
 
     /* Hand the display the extent it will measure against. The loaders are

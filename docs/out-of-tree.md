@@ -168,10 +168,17 @@ source and library come from the same commit.
 
 The 16 sources need nothing. What remains:
 
-- **the CLI surface.** `cubrid importdb …` becomes `cubrid-importdb …` unless the
-  engine keeps its one row in the utility map. Worth a decision, not work.
 - **the engine-side removal PR**, which is what makes the split real rather than
   additive.
+
+**The CLI surface is decided: `cubrid-importdb …`, not `cubrid importdb …`.**
+The second form needs a row in the engine's utility map, which is an engine
+change made on importdb's behalf — and importdb is an extension, so it does not
+ask for one. The engine it builds against is already stock: neither
+`UTIL_OPTION_IMPORTDB` nor `MSGCAT_UTIL_SET_IMPORTDB` is in the 11.5 tree, and
+`CMakeLists.txt` stands this repo's own declarations down if a tree ever does
+carry them. Revisit only if CUBRID grows a general interface for extending its
+utility set; until then the standalone binary costs nothing but a hyphen.
 
 The serial data path used to be on this list: `import_load.cpp` drove loaddb in
 process through `loaddb_init` / `loaddb_load_batch`, which meant the utility
