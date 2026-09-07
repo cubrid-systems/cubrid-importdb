@@ -1,0 +1,4 @@
+%id [sy_user].[sy_t] 48
+%class [sy_user].[sy_t] ([id] [v])
+1 'a'
+2 'b'
