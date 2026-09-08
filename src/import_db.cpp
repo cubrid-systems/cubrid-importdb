@@ -162,6 +162,36 @@ namespace
     return total;
   }
 
+  /* EXPERIMENT (M-SYMBOL-SPLIT): ask the server for ha_mode over the exported,
+   * NON-INLINE db_get_system_parameters instead of the HA_DISABLED() macro. The
+   * macro reaches prm_get_integer_value, which system_parameter.h defines as
+   * STATIC_INLINE __attribute__((ALWAYS_INLINE)) over GET_PRM(id) -> &prm_Def[id],
+   * so it inlines a direct reference to the engine's extern parameter array into
+   * this object and the linker emits an R_X86_64_COPY for it. That copy relocation
+   * is what pins the binary to one engine build. */
+  bool
+  server_ha_disabled (bool &known)
+  {
+    char buf[256] = "ha_mode";
+    if (db_get_system_parameters (buf, (int) sizeof (buf) - 1) != NO_ERROR)
+      {
+	known = false;
+	return true;
+      }
+    const char *eq = strchr (buf, '=');
+    known = (eq != NULL);
+    if (eq == NULL)
+      {
+	return true;
+      }
+    const char *v = eq + 1;
+    while (*v == ' ' || *v == '"')
+      {
+	v++;
+      }
+    return strncmp (v, "off", 3) == 0;
+  }
+
   /* The server's data_buffer_size in bytes, or -1 when it will not say. The
    * server answers "data_buffer_size=512.0M", so the unit suffix is parsed too. */
   long long
@@ -721,7 +751,8 @@ importdb (UTIL_FUNCTION_ARG *arg)
        * db_get_ha_server_state (): a standalone non-HA server reports "active" too,
        * so it cannot tell HA from non-HA. */
       char ha_state_name[64] = "";
-      if (!HA_DISABLED ())
+      bool ha_known = false;
+      if (!server_ha_disabled (ha_known))
 	{
 	  (void) db_get_ha_server_state (ha_state_name, sizeof (ha_state_name) - 1);
 	  if (ha_state_name[0] == '\0')
