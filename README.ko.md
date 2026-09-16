@@ -1,3 +1,7 @@
+<!-- ko-mirror: 독립 검토자 승인 (P4), 2026-09-16.
+     저자 재량으로 유지한 항목: 기동(起動, 현장 통용) / 계열 / assets/*.svg 영문 / 종단 작업.
+     기준: knowledge-base knowledge/methodology/korean-translation.md -->
+
 ![CUBRID ImportDB](assets/banner.svg)
 
 *[English](README.md) · 한국어*
