@@ -15,16 +15,16 @@
 --   lg_writer    schema file as `call [add_user](..)` plus GRANT statements, so
 --                an import either brings the accounts and privileges back or
 --                silently leaves the database unusable by its applications
---                (OFFICE-656 1-1 checks exactly this).
+--                (the release checklist checks exactly this).
 --   lg_parent /  a foreign key, so the cross-version dump also exercises the
 --   lg_child     strip / rebuild / FK-define lifecycle rather than PKs alone.
 --   lg_v_child   a view. Old unloaddb emits `CREATE VCLASS` early and
 --                `ALTER VCLASS .. ADD QUERY` later; the query spec is the half
---                that has broken before (RND-2774).
+--                that has broken before.
 --   lg_trg       a trigger, which importdb defines strictly last.
 --   lg_tree /    the view shape that actually broke. A pre-11.5 unloaddb writes a
---   lg_v_tree    view's query specs with the SELECT list replaced by NA, and RND-2774
---                is what happens next: a subquery whose list is NA, compared against a
+--   lg_v_tree    view's query specs with the SELECT list replaced by NA, and what
+--                happens next is this: a subquery whose list is NA, compared against a
 --                literal in START WITH, made loaddb's type inference fail with
 --                `Cannot coerce _utf8'..' to type unknown data type` on 11.4.5. The
 --                10.2 dump of this view carries exactly that -- two ADD QUERY

@@ -12,7 +12,7 @@
 --     Class dba.sy_t already exists.
 --
 -- which is also what it says about a target that is not empty. CBRD-24974 fixed
--- the class half in 11.2 Patch 7; RND-2698 is the migration that hit it.
+-- the class half in 11.2 Patch 7; a migration off an older 11.2 is what hit it.
 --
 -- Read by tests/cases/compat.sh. Do not reformat -- the blank-line runs are the
 -- engine's own output.

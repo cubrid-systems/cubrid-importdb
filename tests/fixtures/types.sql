@@ -10,7 +10,7 @@
 --   ty_str   fixed/varying, NCHAR, two collations in one row, and non-ASCII
 --   ty_bit   BIT and BIT VARYING, which unloaddb writes as X'..' literals
 --   ty_time  every date/time type INCLUDING the four zoned ones (10.0+)
---   ty_enum  ENUM -- the family OFFICE-656 1-2 names and the suite had missed
+--   ty_enum  ENUM -- a family the release checklist names and the suite had missed
 --   ty_json  JSON -- object and empty array
 --   ty_lob   BLOB and CLOB, which live outside the object file as ELO refs
 --   ty_coll  SET / MULTISET / SEQUENCE of primitives -- value-typed, so a

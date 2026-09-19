@@ -1,7 +1,7 @@
 #!/bin/bash
 # corrupt -- what happens when the dump itself is damaged?
 #
-# OFFICE-656 2-1: the release suite tests the happy path, so a damaged dump is
+# The release suite tests the happy path, so a damaged dump is
 # untested. This case damages one in six ways and pins what importdb actually
 # does with each. Five of the six are caught; two of the six are NOT, and this
 # case asserts that too, because a characterization test that quietly asserts

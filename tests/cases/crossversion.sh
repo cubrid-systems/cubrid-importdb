@@ -1,7 +1,7 @@
 #!/bin/bash
 # crossversion -- does a dump written by an OLDER engine import correctly?
 #
-# This is the OFFICE-656 axis: a customer upgrades, so the dump is written by
+# This is the upgrade axis: a customer upgrades, so the dump is written by
 # the version they are leaving and read by the version they are arriving at.
 # Every other case in this suite unloads and imports with the same install, so
 # none of them can see a cross-version break at all.
@@ -177,7 +177,7 @@ assert_eq "the foreign key was defined against the loaded rows" \
 assert_eq "the view came back and answers" \
   "$(q1 cs "$XTGT" "SELECT count(*) FROM lg_v_child")" 40
 
-# RND-2774: a pre-11.5 unloaddb writes a view's query specs with the SELECT list
+# A pre-11.5 unloaddb writes a view's query specs with the SELECT list
 # replaced by NA, and the second spec of lg_v_tree pairs that with a UNION in a
 # subquery and a START WITH against a literal. On 11.4.5 loaddb could not infer a
 # type for the literal and refused the statement. It imports cleanly here, so this
@@ -201,8 +201,8 @@ assert_no_grep "and did not fire during the load" "$WORK/old.import.log" "lg_par
 
 # ------------------------------------------------------------- can they log in?
 #
-# OFFICE-656 1-1 verifies "사용자 인증, 테이블 접근" -- authentication and table
-# access -- and it is right to: an account that cannot log in after the upgrade
+# The release checklist verifies authentication and table
+# access, and it is right to: an account that cannot log in after the upgrade
 # is the first thing an operator meets, and neither the catalog fingerprint nor
 # the grant set above can see it. The password comes across in the schema file as
 # `call [set_password_encoded_sha1](..) on [auser]`, which is a separate

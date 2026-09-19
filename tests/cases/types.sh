@@ -1,7 +1,7 @@
 #!/bin/bash
 # types -- does every column type survive the round trip?
 #
-# OFFICE-656 2-3: the release suite covers a limited set of column types, so a
+# The release suite covers a limited set of column types, so a
 # family that does not survive a reload has nowhere to show up. The roundtrip
 # case here had the same hole -- it carried integer, character, the date/time
 # four, exact numeric and float, and nothing else.
