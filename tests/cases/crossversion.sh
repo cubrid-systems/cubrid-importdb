@@ -212,8 +212,11 @@ assert_eq "the password set on the OLD engine still authenticates" \
   "$(sql_cs_as "$XTGT" lg_writer lgpw "SELECT count(*) FROM dba.lg_child" | tr -d ' \t\n')" 41
 sql_cs_as "$XTGT" lg_writer definitely-not-the-password "SELECT 1 FROM db_root" \
   > "$WORK/badpw.log" 2>&1
+# Since CBRD-27479 (develop, 2026-10-13) the engine answers a wrong password and
+# an unknown user alike, "Invalid username or password."; earlier builds say
+# "Incorrect or missing password." Either is a refusal, which is what this checks.
 assert_grep "and a wrong password is still refused" "$WORK/badpw.log" \
-  "Incorrect or missing password"
+  "Incorrect or missing password|Invalid username or password"
 assert_eq "a user created without a password needs none, and sees its grant" \
   "$(sql_cs_as "$XTGT" lg_reader "" "SELECT count(*) FROM dba.lg_parent" | tr -d ' \t\n')" 12
 
