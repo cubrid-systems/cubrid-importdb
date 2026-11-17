@@ -124,16 +124,27 @@ jobs:
         uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4
         with:
           path: engine/build
-          key: cfgtree-${{ steps.pick.outputs.version }}
+          # keyed on the source tarball itself, not only its name: entries saved
+          # while fetch_engine.sh reused a stale dl/ hold a 2494 tree under newer
+          # version names, and the hash keeps them from ever matching again
+          key: cfgtree-${{ steps.pick.outputs.version }}-${{ hashFiles('engine/dl/src.tar.gz') }}
 
       - name: configure the engine and build only its 3rdparty headers
         if: steps.cfgcache.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
           cmake -S engine/src -B engine/build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
-          # header producers only -- NOT the engine
-          cmake --build engine/build -j"$(nproc)" \
-                --target rapidjson re2 lz4 libexpat libjansson
+          # header producers only -- NOT the engine. libjansson exists only in an
+          # engine built before CBRD-27222 (2026-09-04), whose scan_manager.h
+          # still includes jansson.h; a newer build rejects it as an unknown target.
+          # (`ninja -t query`, not `-t targets all | grep -q`: grep -q exits at the
+          # match, ninja dies of SIGPIPE, and pipefail turns the hit into a miss)
+          targets="rapidjson re2 lz4 libexpat"
+          if ninja -C engine/build -t query libjansson >/dev/null 2>&1; then
+            targets="$targets libjansson"
+          fi
+          # shellcheck disable=SC2086
+          cmake --build engine/build -j"$(nproc)" --target $targets
           for d in 3rdparty/include 3rdparty/Source/rapidjson/include \
                    3rdparty/Source/re2 3rdparty/Source/lz4/lib; do
             test -d "engine/build/$d" || { echo "::error::engine/build/$d missing after the 3rdparty build"; exit 1; }

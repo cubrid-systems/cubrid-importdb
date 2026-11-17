@@ -355,7 +355,8 @@ tools/fetch_engine.sh --nightly 11.5 engine
 # 이 유틸리티의 번역 단위는 엔진의 생성 헤더와 3rdparty 헤더를 필요로 하는데,
 # 그것은 빌드된 엔진이 아니라 '구성된' 빌드 트리에서 나온다
 cmake -S engine/src -B engine/build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
-cmake --build engine/build --target rapidjson re2 lz4 libexpat libjansson
+cmake --build engine/build --target rapidjson re2 lz4 libexpat
+# (2026-09-04 이전에 빌드된 엔진이면 이 목록에 libjansson도 넣는다)
 
 export CUBRID="$PWD/engine/install"
 cmake -S . -B build -DCUBRID_SOURCE_DIR="$PWD/engine/src" -DCUBRID_BUILD_DIR="$PWD/engine/build"
@@ -392,6 +393,7 @@ cubrid_rel     # CUBRID 11.5.0 (11.5.0.2513-5f3a30d) (64bit release build ...
 # 괄호 안의 빌드 문자열이 --nightly-version 인자 그대로다
 tools/fetch_engine.sh --nightly-version 11.5.0.2513-5f3a30d engine
 cmake -S engine/src -B engine/build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+# 2513은 2026-09-04 이전 빌드이므로 목록에 libjansson이 들어간다
 cmake --build engine/build --target rapidjson re2 lz4 libexpat libjansson
 ```
 

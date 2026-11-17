@@ -377,7 +377,8 @@ tools/fetch_engine.sh --nightly 11.5 engine
 # the utility's translation units need the engine's generated and 3rdparty
 # headers, which come from a CONFIGURED build tree -- not from a built engine
 cmake -S engine/src -B engine/build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
-cmake --build engine/build --target rapidjson re2 lz4 libexpat libjansson
+cmake --build engine/build --target rapidjson re2 lz4 libexpat
+# (an engine built before 2026-09-04 also needs libjansson in that list)
 
 export CUBRID="$PWD/engine/install"
 cmake -S . -B build -DCUBRID_SOURCE_DIR="$PWD/engine/src" -DCUBRID_BUILD_DIR="$PWD/engine/build"
@@ -417,6 +418,7 @@ cubrid_rel     # CUBRID 11.5.0 (11.5.0.2513-5f3a30d) (64bit release build ...
 # the parenthesised build string is the --nightly-version argument verbatim
 tools/fetch_engine.sh --nightly-version 11.5.0.2513-5f3a30d engine
 cmake -S engine/src -B engine/build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+# 2513 was built before 2026-09-04, so its list still includes libjansson
 cmake --build engine/build --target rapidjson re2 lz4 libexpat libjansson
 ```
 

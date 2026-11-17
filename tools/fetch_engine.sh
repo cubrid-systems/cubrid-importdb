@@ -17,7 +17,7 @@
 #
 # Leaves <dest>/src, <dest>/install, and <dest>/engine.env (VERSION, COMMIT,
 # SOURCE_URL) behind. Skips the download when <dest>/dl already holds both
-# tarballs, so a CI cache hit costs nothing.
+# tarballs of the same version, so a CI cache hit costs nothing.
 #
 # --install-only leaves no <dest>/src and halves the download. It is for an
 # engine this repo does not COMPILE against but only RUNS: the crossversion test
@@ -109,14 +109,22 @@ say "  from   $DIR"
 
 mkdir -p "$DEST/dl" || exit 77
 
-# ---- download (skipped when both tarballs are already there, i.e. a cache hit)
+# ---- download (skipped when both tarballs of THIS version are there, i.e. a cache hit)
+# The tarballs keep fixed names, so their presence says nothing about which build
+# they are. CI restores dl/ from an older cache entry, and trusting presence had
+# the nightly lane configure the 11.5.0.2494 source while engine.env named
+# 11.5.0.2920. dl/VERSION records the build the pair came from.
 have_all=1
+[ "$(cat "$DEST/dl/VERSION" 2>/dev/null)" = "$V" ] || have_all=0
 for pair in $WANTED; do
   [ -s "$DEST/dl/${pair##*:}" ] || have_all=0
 done
 if [ "$have_all" = "1" ]; then
   say "every wanted tarball is already present -- skipping the download"
 else
+  # both halves go, not only the wanted ones: an --install-only fetch would
+  # otherwise leave an older src.tar.gz beside a stamp naming the new version
+  rm -f "$DEST/dl/VERSION" "$DEST/dl/hash.md5" "$DEST/dl/src.tar.gz" "$DEST/dl/install.tar.gz"
   for pair in $WANTED; do
     remote="${pair%%:*}"; local="${pair##*:}"
     say "downloading $remote"
@@ -151,6 +159,9 @@ if [ -s "$DEST/dl/hash.md5" ]; then
 else
   say "no hash.md5 published here -- downloads not verified"
 fi
+# stamped only once the pair has passed the check, so a mismatch is re-fetched
+# next time instead of being trusted as a cache hit
+echo "$V" > "$DEST/dl/VERSION"
 
 # ---- extract
 rm -rf "$DEST/src" "$DEST/install"
