@@ -119,10 +119,14 @@ the row count — the same statement over 300,000 rows takes 0.39 s and over
 1,000,000 takes 1.03 s, both sub-linear, before 3,000,000 costs twenty-five times
 what one million did.
 
-Why the buffer decides it is in the engine: an FK build probes the parent's primary
-key once per child row (`btree_prepare_bts`, `btree_load.c`). While the child heap,
-the child's index and the parent's key fit in the page buffer together those probes
-are memory; past that they are disk.
+What an FK build does is in the engine: it scans the child heap, sorts the keys into
+the child's new index, then walks that index's leaf level alongside the parent's
+primary-key leaf level, comparing keys as it goes (`btree_load_check_fk`,
+`btree_load.c`). There is no probe per child row; it descends from the root only for
+the first key, after a match on the last slot of a parent page, or when the key
+columns mix ascending and descending directions. Which of those passes stops fitting
+the page buffer first is not measured. The knee says only that the build's working
+set as a whole does.
 
 importdb says so before the load, comparing the dump's object bytes against the
 server's `data_buffer_size`. Object bytes is a proxy for the working set and not a
