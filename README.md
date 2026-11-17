@@ -300,12 +300,15 @@ constraint lifecycle rather than crediting importdb with the concurrency.
 
 | degree | loaddb | importdb | median ratio | speedup |
 |---|---|---|---|---|
-| **1** | 5.70 s | 2.68 s | 0.481 &nbsp;(pairs 0.444 – 0.677) | **2.13× faster** |
-| **4** | 5.08 s | 1.67 s | 0.362 &nbsp;(pairs 0.327 – 0.410) | **3.04× faster** |
+| **1** | 6.02 s | 2.44 s | 0.413 &nbsp;(pairs 0.371 – 0.504) | **2.47× faster** |
+| **4** | 5.10 s | 1.84 s | 0.390 &nbsp;(pairs 0.247 – 0.484) | **2.77× faster** |
 
 393,000 rows over five object files, medians of five counted pairs, on one 16-core
-Linux host. A ratio and not a stopwatch on purpose: the same baseline work has been
-measured at 3.59 s and 6.07 s within a single run. Measure your own hardware.
+Linux host, against CUBRID 11.5.0.2930 (develop, 2026-11-16). The same case on
+11.5.0.2513 (develop, 2026-09-02), run straight after, measured 1.80× and 2.22×: the
+ratio moved because loaddb got slower, not because importdb got faster. A ratio and
+not a stopwatch on purpose: the same baseline work has been measured at 3.59 s and
+6.07 s within a single run. Measure your own hardware.
 
 Three things worth knowing before you rely on it:
 

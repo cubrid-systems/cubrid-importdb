@@ -1,0 +1,103 @@
+# perf case output -- one of the two runs docs/performance.md compares.
+#
+# host   : 16-core Linux, load 18.08 at start (shared machine; CTL tests of
+#          another workload were running on the same host)
+# engine : CUBRID 11.5.0 (11.5.0.2930-666bb10)
+# build  : cubrid-importdb @ 512f85b, compiled against that engine
+# command: tests/run_tests.sh perf
+#
+# Kept so the table can be audited rather than taken on trust. Reproduce
+# with the same command; the numbers will differ, the method will not.
+
+== perf ==
+      perf         host at start:  18:45:13 up 19:40,  5 users,  load average: 18.08, 10.19, 5.12
+PASS  perf         the dump fans out over one object file per class (5)
+PASS  perf         the dump carries a schema file
+PASS  perf         the dump carries an index file
+      perf         fixture: 393000 row(s) over 5 object file(s), 300000 of them in pf_fact
+      perf         dump size: 23M
+      perf         --- degree 1: 1 warmup pair + 5 counted pair(s), arm order alternating ---
+      perf         degree 1 warmup (not counted)  loaddb 9.02s  importdb 2.54s
+PASS  perf         degree 1 warmup: the loaddb arm exits clean (exit 0)
+PASS  perf         degree 1 warmup: the importdb arm exits clean (exit 0)
+PASS  perf         degree 1: the loaddb arm reproduces the source catalog
+PASS  perf         degree 1: the importdb arm reproduces the source catalog
+PASS  perf         degree 1: the loaddb arm reproduces the source row counts
+PASS  perf         degree 1: the importdb arm reproduces the source row counts
+PASS  perf         degree 1: the importdb arm reports COMPLETE
+PASS  perf         degree 1: the importdb arm loaded every source row
+      perf         degree 1 pair 1  loaddb   6.31s  importdb   2.34s  ratio I/L 0.371  (L first)
+PASS  perf         degree 1 pair 1: the loaddb arm exits clean (exit 0)
+PASS  perf         degree 1 pair 1: the importdb arm exits clean (exit 0)
+PASS  perf         degree 1 pair 1: both arms end with the same catalog
+PASS  perf         degree 1 pair 1: both arms end with the same row counts
+      perf         degree 1 pair 2  loaddb   4.64s  importdb   2.34s  ratio I/L 0.504  (I first)
+PASS  perf         degree 1 pair 2: the loaddb arm exits clean (exit 0)
+PASS  perf         degree 1 pair 2: the importdb arm exits clean (exit 0)
+PASS  perf         degree 1 pair 2: both arms end with the same catalog
+PASS  perf         degree 1 pair 2: both arms end with the same row counts
+      perf         degree 1 pair 3  loaddb   5.91s  importdb   2.44s  ratio I/L 0.413  (L first)
+PASS  perf         degree 1 pair 3: the loaddb arm exits clean (exit 0)
+PASS  perf         degree 1 pair 3: the importdb arm exits clean (exit 0)
+PASS  perf         degree 1 pair 3: both arms end with the same catalog
+PASS  perf         degree 1 pair 3: both arms end with the same row counts
+      perf         degree 1 pair 4  loaddb   6.02s  importdb   2.76s  ratio I/L 0.458  (I first)
+PASS  perf         degree 1 pair 4: the loaddb arm exits clean (exit 0)
+PASS  perf         degree 1 pair 4: the importdb arm exits clean (exit 0)
+PASS  perf         degree 1 pair 4: both arms end with the same catalog
+PASS  perf         degree 1 pair 4: both arms end with the same row counts
+      perf         degree 1 pair 5  loaddb   7.17s  importdb   2.85s  ratio I/L 0.397  (L first)
+PASS  perf         degree 1 pair 5: the loaddb arm exits clean (exit 0)
+PASS  perf         degree 1 pair 5: the importdb arm exits clean (exit 0)
+PASS  perf         degree 1 pair 5: both arms end with the same catalog
+PASS  perf         degree 1 pair 5: both arms end with the same row counts
+      perf         degree 1: median loaddb 6.020s, median importdb 2.440s
+      perf         degree 1: MEDIAN RATIO importdb/loaddb = 0.413 (importdb 2.467x), pairs 0.371..0.504
+      perf         degree 1: single-host trend on a shared machine -- not a certified benchmark
+PASS  perf         degree 1: median ratio importdb/loaddb 0.413 is within the 1.5 guard
+      perf         --- degree 4: 1 warmup pair + 5 counted pair(s), arm order alternating ---
+      perf         degree 4 warmup (not counted)  loaddb 2.01s  importdb 1.26s
+PASS  perf         degree 4 warmup: the loaddb arm exits clean (exit 0)
+PASS  perf         degree 4 warmup: the importdb arm exits clean (exit 0)
+PASS  perf         degree 4: the loaddb arm reproduces the source catalog
+PASS  perf         degree 4: the importdb arm reproduces the source catalog
+PASS  perf         degree 4: the loaddb arm reproduces the source row counts
+PASS  perf         degree 4: the importdb arm reproduces the source row counts
+PASS  perf         degree 4: the importdb arm reports COMPLETE
+PASS  perf         degree 4: the importdb arm loaded every source row
+      perf         degree 4 pair 1  loaddb   4.03s  importdb   1.84s  ratio I/L 0.457  (L first)
+PASS  perf         degree 4 pair 1: the loaddb arm exits clean (exit 0)
+PASS  perf         degree 4 pair 1: the importdb arm exits clean (exit 0)
+PASS  perf         degree 4 pair 1: both arms end with the same catalog
+PASS  perf         degree 4 pair 1: both arms end with the same row counts
+      perf         degree 4 pair 2  loaddb   6.65s  importdb   1.67s  ratio I/L 0.251  (I first)
+PASS  perf         degree 4 pair 2: the loaddb arm exits clean (exit 0)
+PASS  perf         degree 4 pair 2: the importdb arm exits clean (exit 0)
+PASS  perf         degree 4 pair 2: both arms end with the same catalog
+PASS  perf         degree 4 pair 2: both arms end with the same row counts
+      perf         degree 4 pair 3  loaddb   9.02s  importdb   2.23s  ratio I/L 0.247  (L first)
+PASS  perf         degree 4 pair 3: the loaddb arm exits clean (exit 0)
+PASS  perf         degree 4 pair 3: the importdb arm exits clean (exit 0)
+PASS  perf         degree 4 pair 3: both arms end with the same catalog
+PASS  perf         degree 4 pair 3: both arms end with the same row counts
+      perf         degree 4 pair 4  loaddb   5.10s  importdb   2.47s  ratio I/L 0.484  (I first)
+PASS  perf         degree 4 pair 4: the loaddb arm exits clean (exit 0)
+PASS  perf         degree 4 pair 4: the importdb arm exits clean (exit 0)
+PASS  perf         degree 4 pair 4: both arms end with the same catalog
+PASS  perf         degree 4 pair 4: both arms end with the same row counts
+      perf         degree 4 pair 5  loaddb   4.61s  importdb   1.80s  ratio I/L 0.390  (L first)
+PASS  perf         degree 4 pair 5: the loaddb arm exits clean (exit 0)
+PASS  perf         degree 4 pair 5: the importdb arm exits clean (exit 0)
+PASS  perf         degree 4 pair 5: both arms end with the same catalog
+PASS  perf         degree 4 pair 5: both arms end with the same row counts
+      perf         degree 4: median loaddb 5.100s, median importdb 1.840s
+      perf         degree 4: MEDIAN RATIO importdb/loaddb = 0.390 (importdb 2.772x), pairs 0.247..0.484
+      perf         degree 4: single-host trend on a shared machine -- not a certified benchmark
+PASS  perf         degree 4: median ratio importdb/loaddb 0.390 is within the 1.5 guard
+      perf         host at end:  18:50:53 up 19:46,  5 users,  load average: 2.52, 5.46, 4.69
+   (perf: 340s)
+
+---- tally ----
+assertions : 61 passed, 0 failed, 0 skipped
+cases      : 1 run, 0 with failures, 0 aborted
+functional: PASS

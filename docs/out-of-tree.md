@@ -7,7 +7,7 @@ and what keeps that dependency from breaking silently. If you only want to *use*
 Status: **builds and imports**, including against the official nightly daily
 build. `tools/smoke.sh` runs a real two-table import (PK, FK, plain index, 450
 rows) and checks the catalog round-trip; verified against
-`11.5.0.2494-4b6ae5c`.
+`11.5.0.2930-666bb10`.
 
 ## What is distributed, and what that costs
 

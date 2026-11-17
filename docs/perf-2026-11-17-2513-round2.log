@@ -1,0 +1,65 @@
+# perf case output -- the second round docs/performance.md cites but does not
+# tabulate. Disturbed by another workload on the host (CTL tests, and CTP shell
+# tests whose init runs `pkill cub`).
+#
+# host   : 16-core Linux, load 3.69 at start (shared machine)
+# engine : CUBRID 11.5.0 (11.5.0.2513-5f3a30d)
+# build  : cubrid-importdb @ 512f85b, compiled against that engine
+# command: tests/run_tests.sh perf
+# outcome: aborted at degree 4: it_perf_l could not be recreated
+
+== perf ==
+      perf         host at start:  19:03:18 up 19:58,  5 users,  load average: 3.69, 4.49, 4.33
+PASS  perf         the dump fans out over one object file per class (5)
+PASS  perf         the dump carries a schema file
+PASS  perf         the dump carries an index file
+      perf         fixture: 393000 row(s) over 5 object file(s), 300000 of them in pf_fact
+      perf         dump size: 23M
+      perf         --- degree 1: 1 warmup pair + 5 counted pair(s), arm order alternating ---
+      perf         degree 1 warmup (not counted)  loaddb 5.57s  importdb 2.49s
+PASS  perf         degree 1 warmup: the loaddb arm exits clean (exit 0)
+PASS  perf         degree 1 warmup: the importdb arm exits clean (exit 0)
+PASS  perf         degree 1: the loaddb arm reproduces the source catalog
+PASS  perf         degree 1: the importdb arm reproduces the source catalog
+PASS  perf         degree 1: the loaddb arm reproduces the source row counts
+PASS  perf         degree 1: the importdb arm reproduces the source row counts
+PASS  perf         degree 1: the importdb arm reports COMPLETE
+PASS  perf         degree 1: the importdb arm loaded every source row
+      perf         degree 1 pair 1  loaddb   4.92s  importdb   4.12s  ratio I/L 0.837  (L first)
+PASS  perf         degree 1 pair 1: the loaddb arm exits clean (exit 0)
+PASS  perf         degree 1 pair 1: the importdb arm exits clean (exit 0)
+PASS  perf         degree 1 pair 1: both arms end with the same catalog
+PASS  perf         degree 1 pair 1: both arms end with the same row counts
+      perf         degree 1 pair 2  loaddb   3.75s  importdb   2.39s  ratio I/L 0.637  (I first)
+PASS  perf         degree 1 pair 2: the loaddb arm exits clean (exit 0)
+PASS  perf         degree 1 pair 2: the importdb arm exits clean (exit 0)
+PASS  perf         degree 1 pair 2: both arms end with the same catalog
+PASS  perf         degree 1 pair 2: both arms end with the same row counts
+      perf         degree 1 pair 3  loaddb   3.65s  importdb   2.46s  ratio I/L 0.674  (L first)
+PASS  perf         degree 1 pair 3: the loaddb arm exits clean (exit 0)
+PASS  perf         degree 1 pair 3: the importdb arm exits clean (exit 0)
+PASS  perf         degree 1 pair 3: both arms end with the same catalog
+PASS  perf         degree 1 pair 3: both arms end with the same row counts
+      perf         degree 1 pair 4  loaddb   4.03s  importdb   2.49s  ratio I/L 0.618  (I first)
+PASS  perf         degree 1 pair 4: the loaddb arm exits clean (exit 0)
+PASS  perf         degree 1 pair 4: the importdb arm exits clean (exit 0)
+PASS  perf         degree 1 pair 4: both arms end with the same catalog
+PASS  perf         degree 1 pair 4: both arms end with the same row counts
+      perf         degree 1 pair 5  loaddb   4.48s  importdb   3.92s  ratio I/L 0.875  (L first)
+PASS  perf         degree 1 pair 5: the loaddb arm exits clean (exit 0)
+PASS  perf         degree 1 pair 5: the importdb arm exits clean (exit 0)
+PASS  perf         degree 1 pair 5: both arms end with the same catalog
+PASS  perf         degree 1 pair 5: both arms end with the same row counts
+      perf         degree 1: median loaddb 4.030s, median importdb 2.490s
+      perf         degree 1: MEDIAN RATIO importdb/loaddb = 0.674 (importdb 1.618x), pairs 0.618..0.875
+      perf         degree 1: single-host trend on a shared machine -- not a certified benchmark
+PASS  perf         degree 1: median ratio importdb/loaddb 0.674 is within the 1.5 guard
+ABORT perf         cannot create it_perf_l
+FAIL  perf         case exited 1 without reporting a failure
+   (perf: 205s)
+
+---- tally ----
+assertions : 32 passed, 1 failed, 0 skipped
+cases      : 1 run, 1 with failures, 1 aborted
+functional: FAIL
+  FAIL  perf         case exited 1 without reporting a failure
