@@ -18,8 +18,9 @@
 #
 # Schema-first in arm L is not a straw man: it is what a hand-scripted loaddb
 # reload does, and it is exactly the thing importdb changes. Every PK, UNIQUE
-# and FK is defined before the first row lands, so each row pays per-row b-tree
-# maintenance and a referential check; importdb strips the constraints, loads
+# and FK is defined before the first row lands, so each row pays b-tree
+# maintenance on every one of them (loaddb skips the referential check itself,
+# which is why it never catches an orphan); importdb strips the constraints, loads
 # into bare heaps, and bulk-builds them afterwards. Both arms run every phase in
 # CS mode against the same running server -- switching arm L's schema and index
 # phases to SA mode would force a server stop and start into the timed region

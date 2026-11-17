@@ -286,11 +286,14 @@ importdb는 옛 구문을 받아 주는 `loaddb -s`의 관용 범위를 그대�
 
 | 병렬도 | loaddb | importdb | 비율 중앙값 | 속도 향상 |
 |---|---|---|---|---|
-| **1** | 5.70 s | 2.68 s | 0.481 &nbsp;(쌍별 0.444 – 0.677) | **2.13× 빠름** |
-| **4** | 5.08 s | 1.67 s | 0.362 &nbsp;(쌍별 0.327 – 0.410) | **3.04× 빠름** |
+| **1** | 6.02 s | 2.44 s | 0.413 &nbsp;(쌍별 0.371 – 0.504) | **2.47× 빠름** |
+| **4** | 5.10 s | 1.84 s | 0.390 &nbsp;(쌍별 0.247 – 0.484) | **2.77× 빠름** |
 
 오브젝트 파일 다섯 개에 걸친 393,000행, 측정 쌍 다섯 번의 중앙값, 16코어 리눅스 호스트 한
-대에서. 스톱워치 값이 아니라 비율을 쓴 것은 의도적입니다. 같은 기준선 작업이 한 번의 실행
+대에서, CUBRID 11.5.0.2930(develop, 2026-11-16)을 상대로 잰 값입니다. 바로 이어서 같은
+케이스를 11.5.0.2513(develop, 2026-09-02)에서 돌리면 1.80배와 2.22배가 나왔습니다. 비율이
+달라진 것은 importdb가 빨라져서가 아니라 loaddb가 느려졌기 때문입니다. 스톱워치 값이 아니라
+비율을 쓴 것은 의도적입니다. 같은 기준선 작업이 한 번의 실행
 안에서 3.59초로도, 6.07초로도 측정된 적이 있습니다. 여러분의 하드웨어에서 직접 재 보십시오.
 
 믿고 쓰기 전에 알아 둘 것이 셋 있습니다.
@@ -355,7 +358,8 @@ tools/fetch_engine.sh --nightly 11.5 engine
 # 이 유틸리티의 번역 단위는 엔진의 생성 헤더와 3rdparty 헤더를 필요로 하는데,
 # 그것은 빌드된 엔진이 아니라 '구성된' 빌드 트리에서 나온다
 cmake -S engine/src -B engine/build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
-cmake --build engine/build --target rapidjson re2 lz4 libexpat libjansson
+cmake --build engine/build --target rapidjson re2 lz4 libexpat
+# (2026-09-04 이전에 빌드된 엔진이면 이 목록에 libjansson도 넣는다)
 
 export CUBRID="$PWD/engine/install"
 cmake -S . -B build -DCUBRID_SOURCE_DIR="$PWD/engine/src" -DCUBRID_BUILD_DIR="$PWD/engine/build"
@@ -392,6 +396,7 @@ cubrid_rel     # CUBRID 11.5.0 (11.5.0.2513-5f3a30d) (64bit release build ...
 # 괄호 안의 빌드 문자열이 --nightly-version 인자 그대로다
 tools/fetch_engine.sh --nightly-version 11.5.0.2513-5f3a30d engine
 cmake -S engine/src -B engine/build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+# 2513은 2026-09-04 이전 빌드이므로 목록에 libjansson이 들어간다
 cmake --build engine/build --target rapidjson re2 lz4 libexpat libjansson
 ```
 

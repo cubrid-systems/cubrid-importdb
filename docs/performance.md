@@ -19,16 +19,41 @@ pairs: one unmeasured warmup pair, then alternating arm order, reporting the
 **median of the per-pair ratios**, because drift that moves both arms of a pair
 barely moves their ratio.
 
-| degree | loaddb | importdb | median ratio | speedup |
-|---|---|---|---|---|
-| **1** | 5.70 s | 2.68 s | 0.481 &nbsp;(pairs 0.444 – 0.677) | **2.13× faster** |
-| **4** | 5.08 s | 1.67 s | 0.362 &nbsp;(pairs 0.327 – 0.410) | **3.04× faster** |
+| engine | degree | loaddb | importdb | median ratio | speedup |
+|---|---|---|---|---|---|
+| **11.5.0.2930** &nbsp;(develop, 2026-11-16) | **1** | 6.02 s | 2.44 s | 0.413 &nbsp;(pairs 0.371 – 0.504) | **2.47× faster** |
+| | **4** | 5.10 s | 1.84 s | 0.390 &nbsp;(pairs 0.247 – 0.484) | **2.77× faster** |
+| 11.5.0.2513 &nbsp;(develop, 2026-09-02) | 1 | 4.48 s | 2.49 s | 0.634 &nbsp;(pairs 0.521 – 0.703) | 1.80× faster |
+| | 4 | 4.27 s | 1.92 s | 0.407 &nbsp;(pairs 0.317 – 0.518) | 2.22× faster |
 
-Medians of five counted pairs each, 2026-08-28, on a 16-core Linux host at load
-0.68 against CUBRID 11.5.0.2494 — the run itself is kept at
-[`perf-2026-08-28.log`](perf-2026-08-28.log), so the table can be audited rather
-than taken on trust. The advantage is the constraint lifecycle at both degrees,
-and it grows with concurrency. Why it grows is not something this case measures.
+Medians of five counted pairs each. Both engines were measured back to back on
+2026-11-17 on one 16-core Linux host, with the same importdb source compiled against
+each, and both runs are kept —
+[`perf-2026-11-17-2930.log`](perf-2026-11-17-2930.log) and
+[`perf-2026-11-17-2513.log`](perf-2026-11-17-2513.log) — so the table can be audited
+rather than taken on trust. The host was shared: another workload's CTL tests ran
+throughout, and the 2930 run started at load 18 where the 2513 run started at 2.5.
+The advantage is the constraint
+lifecycle at both degrees on both engines, and it grows with concurrency. Why it
+grows is not something this case measures.
+
+Between the two engines develop gained five changes to the index-build sort
+(CBRD-27234, -27235, -27426, -27381, -27236), which is exactly what the rebuild and
+FK phases run. At this size they do not show: importdb's own median barely moved
+(2.49 s to 2.44 s at degree 1, 1.92 s to 1.84 s at degree 4), because rebuild and FK
+definition take under a second here. The ratio moved because the loaddb arm got
+slower, 4.48 s to 6.02 s at degree 1. What slowed it is not measured: 62 commits
+between the two engines touch the per-row load path, and the higher starting load of
+the 2930 run is not ruled out either. A second round of both runs, 2930 first this
+time, was disturbed by the other workload — the 2930 pairs spread 0.34 – 0.98, and
+the 2513 run aborted at degree 4 when a database could not be recreated — so it is
+not in the table. Its degree-1 medians, 0.501 on 2930 and 0.674 on 2513, point the
+same way ([`perf-2026-11-17-2930-round2.log`](perf-2026-11-17-2930-round2.log),
+[`perf-2026-11-17-2513-round2.log`](perf-2026-11-17-2513-round2.log)).
+
+The earlier record, on 11.5.0.2494 at load 0.68
+([`perf-2026-08-28.log`](perf-2026-08-28.log)), measured 2.13× at degree 1 and
+3.04× at degree 4.
 
 This is a single-host trend on a shared machine, not a certified benchmark: the
 same baseline work has been measured at 3.59 s and 6.07 s within one run, which is
@@ -44,6 +69,9 @@ catalog fingerprint and on every per-class row count. A disagreement about the
 resulting database is a hard failure whatever the clock said.
 
 ## Where the time goes at ten times the data
+
+Everything from here to the caveats was measured on 11.5.0.2494 and has not been
+re-run on a newer engine.
 
 The table above is measured below a threshold that changes the shape of the
 answer. Scaling the same fixture ten times, to 3.93M rows, and timing importdb's
@@ -91,10 +119,14 @@ the row count — the same statement over 300,000 rows takes 0.39 s and over
 1,000,000 takes 1.03 s, both sub-linear, before 3,000,000 costs twenty-five times
 what one million did.
 
-Why the buffer decides it is in the engine: an FK build probes the parent's primary
-key once per child row (`btree_prepare_bts`, `btree_load.c`). While the child heap,
-the child's index and the parent's key fit in the page buffer together those probes
-are memory; past that they are disk.
+What an FK build does is in the engine: it scans the child heap, sorts the keys into
+the child's new index, then walks that index's leaf level alongside the parent's
+primary-key leaf level, comparing keys as it goes (`btree_load_check_fk`,
+`btree_load.c`). There is no probe per child row; it descends from the root only for
+the first key, after a match on the last slot of a parent page, or when the key
+columns mix ascending and descending directions. Which of those passes stops fitting
+the page buffer first is not measured. The knee says only that the build's working
+set as a whole does.
 
 importdb says so before the load, comparing the dump's object bytes against the
 server's `data_buffer_size`. Object bytes is a proxy for the working set and not a
@@ -120,7 +152,9 @@ sort buffer and had moved just as much. The host had gone quiet, nothing else:
 
 Relative cost went slightly *up* for a 128-fold larger buffer. On the isolated
 single-statement benchmark it is the same story: 23.28 s at 256 M against 19.11 s
-at 2 M, within the noise of each other.
+at 2 M, within the noise of each other. This one is due a re-measurement: develop
+has since made the merge fan-in of the index-build sort follow the sort buffer
+(CBRD-27236), so on a newer engine the buffer may matter where it did not here.
 
 **Parallelising the terminal phases across sessions is aimed at the wrong thing,
 and blocked besides.** Wrong because serialism is not where the cost is. Blocked
@@ -160,7 +194,7 @@ load is 17 % of a large run: a perfect fix bounds out there.
   files, so a default single-file dump runs serially no matter what you pass —
   silently, today.
 - **The paired table is measured below the knee.** 393,000 rows never reaches the
-  page-buffer threshold, so the 2.1× and 3.0× are honest for that size and say
+  page-buffer threshold, so its ratios are honest for that size and say
   nothing about what happens above it. Nobody has run the paired comparison at
   3.93M rows; whether the advantage holds, grows, or inverts there is unmeasured.
 
